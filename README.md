@@ -4,8 +4,9 @@ Command-line client for the IB1 Directory member API. Built to make the API easy
 exercise as it grows, and to be drivable by scripts and code agents (machine-readable
 output, real exit codes, no prompts).
 
-This is the **token-paste** stage: you supply a bearer access token. Interactive login
-(authorization-code + PKCE) and a keyring token cache come in a later slice.
+Authenticate either by **logging in** (browser, authorization-code + PKCE, token cached in
+the OS keyring) or by **pasting a token** (`--token` / `DIRECTORY_TOKEN`) for short runs and
+CI.
 
 ## Install
 
@@ -23,6 +24,29 @@ This installs a `directory` command.
 | `--api-url` | `DIRECTORY_API_URL` | `http://localhost:8000` |
 | `--token`   | `DIRECTORY_TOKEN`   | (none)                  |
 | `--json`    |                     | pretty-printed          |
+
+Login uses these (the public Cognito client is environment-specific):
+
+| Env var                       | Meaning                                                   |
+| ----------------------------- | --------------------------------------------------------- |
+| `DIRECTORY_COGNITO_DOMAIN`    | Hosted UI base URL, e.g. `https://<prefix>.auth.<region>.amazoncognito.com` |
+| `DIRECTORY_COGNITO_CLIENT_ID` | The public (no-secret) CLI app client id                  |
+| `DIRECTORY_OAUTH_SCOPES`      | Default `openid email`                                    |
+| `DIRECTORY_REDIRECT_PORT`     | Default `8400` (must match the client's registered callback) |
+
+## Login
+
+```bash
+directory login     # opens a browser, caches the token in your OS keyring
+directory logout    # clears the cached token
+directory token     # prints a current access token (refreshing if needed)
+```
+
+After `directory login`, `me get` / `me update` use the cached token automatically. Token
+precedence is `--token` then `DIRECTORY_TOKEN` then the keyring cache.
+
+`directory token` is the bridge for agents/CI that can't open a browser: a human runs it and
+passes the value as `DIRECTORY_TOKEN`. The token is short-lived, so this suits short runs.
 
 ## Usage
 
@@ -50,10 +74,17 @@ Editable fields: `--email`, `--street-address`, `--locality`, `--region`, `--sta
 | 1    | API or transport error (4xx/5xx, connection failure) |
 | 2    | Usage error (no token, or update with no fields)     |
 
-## Getting a token (temporary)
+## Prerequisites for login (one-time, out of this repo)
 
-Paste a current Cognito **access** token (e.g. from a
-browser session or a dev script). It is short-lived, so only suitable for short runs.
+Interactive login needs a **public** Cognito app client on the existing user pool:
+
+- no client secret
+- authorization-code grant with PKCE
+- callback URL `http://localhost:8400/callback` (the exact port must match `DIRECTORY_REDIRECT_PORT`)
+- scopes `openid email`
+
+Its client id must also be added to the API's `COGNITO_ALLOWED_CLIENT_IDS` so the API accepts
+tokens it issues. Both are deploy/infra steps (AWS + the deployments repo), not part of the CLI.
 
 ## Tests
 

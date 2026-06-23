@@ -1,8 +1,9 @@
 """Typer entry point for the Directory CLI.
 
 A non-interactive harness for the member API: token from ``--token`` / ``DIRECTORY_TOKEN``,
-machine-readable output (``--json``), and meaningful exit codes so an agent or CI can drive
-it. Exit codes: 0 success, 1 API/transport error, 2 usage error (e.g. no token).
+the keyring cache (after ``directory login``), machine-readable output (``--json``), and
+meaningful exit codes so an agent or CI can drive it. Exit codes: 0 success, 1 API/transport
+error, 2 usage error (e.g. no token).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Optional
 import httpx
 import typer
 
-from directory_cli import client
+from directory_cli import auth, client
 from directory_cli.client import Settings
 
 app = typer.Typer(
@@ -54,13 +55,24 @@ def _emit(settings: Settings, data) -> None:
         typer.echo(jsonlib.dumps(data, indent=2))
 
 
+def _resolve_token(settings: Settings) -> None:
+    """Fill in the token from the keyring cache if none was given explicitly.
+
+    Precedence: --token / DIRECTORY_TOKEN (already on settings) then `directory login`.
+    """
+    if not settings.token:
+        settings.token = auth.get_access_token(auth.load_auth_config())
+
+
 def _call(settings: Settings, method: str, path: str, body: dict | None = None):
     """Run a request, mapping failures to messages on stderr + exit codes."""
     try:
         return client.request(settings, method, path, json=body)
     except client.MissingToken:
         typer.secho(
-            "No token. Pass --token or set DIRECTORY_TOKEN.", fg="red", err=True
+            "No token. Run `directory login`, pass --token, or set DIRECTORY_TOKEN.",
+            fg="red",
+            err=True,
         )
         raise typer.Exit(2)
     except client.APIError as exc:
@@ -73,10 +85,48 @@ def _call(settings: Settings, method: str, path: str, body: dict | None = None):
         raise typer.Exit(1)
 
 
+@app.command("login")
+def login_cmd(ctx: typer.Context) -> None:
+    """Log in via the browser (authorization-code + PKCE) and cache the token."""
+    config = auth.load_auth_config()
+    missing = config.missing_for_login()
+    if missing:
+        typer.secho(
+            f"Missing config: {', '.join(missing)}. See the README for the env vars.",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(2)
+    try:
+        auth.login(config)
+    except Exception as exc:  # browser/exchange failures
+        typer.secho(f"Login failed: {exc}", fg="red", err=True)
+        raise typer.Exit(1)
+    typer.secho("Logged in. Token cached.", fg="green")
+
+
+@app.command("logout")
+def logout_cmd(ctx: typer.Context) -> None:
+    """Clear the cached token."""
+    auth.logout(auth.load_auth_config())
+    typer.echo("Logged out.")
+
+
+@app.command("token")
+def token_cmd(ctx: typer.Context) -> None:
+    """Print a current access token (for piping into an agent or another tool)."""
+    access_token = auth.get_access_token(auth.load_auth_config())
+    if not access_token:
+        typer.secho("No cached token. Run `directory login`.", fg="red", err=True)
+        raise typer.Exit(2)
+    typer.echo(access_token)
+
+
 @me_app.command("get")
 def me_get(ctx: typer.Context) -> None:
     """Fetch your organisation (GET /members/me)."""
     settings: Settings = ctx.obj
+    _resolve_token(settings)
     _emit(settings, _call(settings, "GET", "/members/me"))
 
 
@@ -98,6 +148,7 @@ def me_update(
     Only the flags you pass are sent, so this is a partial (merge-patch) update.
     """
     settings: Settings = ctx.obj
+    _resolve_token(settings)
 
     address = {
         "streetAddress": street_address,
