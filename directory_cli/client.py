@@ -35,7 +35,7 @@ class APIError(Exception):
 
 
 def _build_client(settings: Settings) -> httpx.Client:
-    # Seam for tests to inject an httpx.MockTransport.
+    # Tests patch this to inject an httpx.MockTransport (no real network calls).
     return httpx.Client(base_url=settings.api_url, timeout=10.0)
 
 

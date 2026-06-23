@@ -18,11 +18,11 @@ This installs a `directory` command.
 
 ## Configuration
 
-| Option | Env var | Default |
-|--------|---------|---------|
+| Option      | Env var             | Default                 |
+| ----------- | ------------------- | ----------------------- |
 | `--api-url` | `DIRECTORY_API_URL` | `http://localhost:8000` |
-| `--token` | `DIRECTORY_TOKEN` | (none) |
-| `--json` | | pretty-printed |
+| `--token`   | `DIRECTORY_TOKEN`   | (none)                  |
+| `--json`    |                     | pretty-printed          |
 
 ## Usage
 
@@ -44,17 +44,16 @@ Editable fields: `--email`, `--street-address`, `--locality`, `--region`, `--sta
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | API or transport error (4xx/5xx, connection failure) |
-| 2 | Usage error (no token, or update with no fields) |
+| Code | Meaning                                              |
+| ---- | ---------------------------------------------------- |
+| 0    | Success                                              |
+| 1    | API or transport error (4xx/5xx, connection failure) |
+| 2    | Usage error (no token, or update with no fields)     |
 
-## Getting a token (for now)
+## Getting a token (temporary)
 
-Until interactive login lands, paste a current Cognito **access** token (e.g. from a
-browser session or a dev script). It is short-lived, so this suits short runs; long-lived
-credentials are the job of the later auth slice.
+Paste a current Cognito **access** token (e.g. from a
+browser session or a dev script). It is short-lived, so only suitable for short runs.
 
 ## Tests
 

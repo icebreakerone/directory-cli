@@ -1,7 +1,7 @@
 """Tests for the Directory CLI (token-paste mode).
 
-Requests are intercepted with an httpx.MockTransport injected via the `_build_client`
-seam, so nothing hits the network.
+The tests patch `_build_client` to return a client with an httpx.MockTransport, so
+nothing hits the network.
 """
 
 import json
