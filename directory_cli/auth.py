@@ -158,10 +158,12 @@ def logout(config: AuthConfig) -> None:
     _clear_token(config)
 
 
-def get_access_token(config: AuthConfig) -> str | None:
-    """Return a usable access token from the cache, refreshing it if expired.
+def get_id_token(config: AuthConfig) -> str | None:
+    """Return a usable id token from the cache, refreshing it if expired.
 
-    Returns None when there is nothing cached, or it has expired and cannot be refreshed.
+    The member API authenticates with the id token (it carries the user's email, which
+    the API matches to their organisation). Returns None when there is nothing cached, or
+    it has expired and cannot be refreshed.
     """
     token = _load_token(config)
     if not token:
@@ -169,7 +171,7 @@ def get_access_token(config: AuthConfig) -> str | None:
 
     expires_at = token.get("expires_at")
     if not expires_at or time.time() < expires_at - _EXPIRY_SKEW_SECONDS:
-        return token.get("access_token")
+        return token.get("id_token")
 
     refresh_token = token.get("refresh_token")
     if not refresh_token or not config.domain or not config.client_id:
@@ -183,4 +185,4 @@ def get_access_token(config: AuthConfig) -> str | None:
     # Cognito does not return a new refresh token on refresh; keep the existing one.
     new_token.setdefault("refresh_token", refresh_token)
     _store_token(config, new_token)
-    return new_token.get("access_token")
+    return new_token.get("id_token")

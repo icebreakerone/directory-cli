@@ -20,7 +20,7 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def no_cached_token(monkeypatch):
     """Default: no keyring token, so tests never touch the real OS keyring."""
-    monkeypatch.setattr(auth_mod, "get_access_token", lambda config: None)
+    monkeypatch.setattr(auth_mod, "get_id_token", lambda config: None)
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def test_api_error_exits_nonzero(patch_client):
 def test_me_get_falls_back_to_cached_token(monkeypatch, patch_client):
     """With no --token/env, the request uses the keyring-cached token."""
     monkeypatch.delenv("DIRECTORY_TOKEN", raising=False)
-    monkeypatch.setattr(auth_mod, "get_access_token", lambda config: "cached-tok")
+    monkeypatch.setattr(auth_mod, "get_id_token", lambda config: "cached-tok")
     captured = patch_client(200, {"identifier": "acme"})
 
     result = runner.invoke(app, ["me", "get"])
@@ -116,7 +116,7 @@ def test_token_command_without_cache_is_usage_error():
 
 
 def test_token_command_prints_cached_token(monkeypatch):
-    monkeypatch.setattr(auth_mod, "get_access_token", lambda config: "abc123")
+    monkeypatch.setattr(auth_mod, "get_id_token", lambda config: "abc123")
     result = runner.invoke(app, ["token"])
     assert result.exit_code == 0
     assert "abc123" in result.stdout
