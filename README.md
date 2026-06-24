@@ -39,7 +39,7 @@ Login uses these (the public Cognito client is environment-specific):
 ```bash
 directory login     # opens a browser, caches the token in your OS keyring
 directory logout    # clears the cached token
-directory token     # prints a current access token (refreshing if needed)
+directory token     # prints a current id token (refreshing if needed)
 ```
 
 After `directory login`, `me get` / `me update` use the cached token automatically. Token

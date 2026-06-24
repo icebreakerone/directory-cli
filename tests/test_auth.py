@@ -67,21 +67,21 @@ def test_token_round_trips_through_cache(fake_keyring):
     assert auth._load_token(config)["access_token"] == "a"
 
 
-def test_get_access_token_returns_valid_cached(fake_keyring):
+def test_get_id_token_returns_valid_cached(fake_keyring):
     config = _config()
-    auth._store_token(config, {"access_token": "valid", "expires_at": time.time() + 999})
-    assert auth.get_access_token(config) == "valid"
+    auth._store_token(config, {"id_token": "valid", "expires_at": time.time() + 999})
+    assert auth.get_id_token(config) == "valid"
 
 
-def test_get_access_token_none_when_empty(fake_keyring):
-    assert auth.get_access_token(_config()) is None
+def test_get_id_token_none_when_empty(fake_keyring):
+    assert auth.get_id_token(_config()) is None
 
 
-def test_get_access_token_refreshes_when_expired(fake_keyring, monkeypatch):
+def test_get_id_token_refreshes_when_expired(fake_keyring, monkeypatch):
     config = _config()
     auth._store_token(
         config,
-        {"access_token": "old", "refresh_token": "r1", "expires_at": time.time() - 10},
+        {"id_token": "old", "refresh_token": "r1", "expires_at": time.time() - 10},
     )
 
     class FakeClient:
@@ -96,11 +96,11 @@ def test_get_access_token_refreshes_when_expired(fake_keyring, monkeypatch):
 
         def refresh_token(self, endpoint, refresh_token):
             assert refresh_token == "r1"
-            return {"access_token": "fresh", "expires_at": time.time() + 999}
+            return {"id_token": "fresh", "expires_at": time.time() + 999}
 
     monkeypatch.setattr(auth, "OAuth2Client", FakeClient)
 
-    assert auth.get_access_token(config) == "fresh"
+    assert auth.get_id_token(config) == "fresh"
     # Cognito doesn't reissue the refresh token; the old one is preserved.
     assert auth._load_token(config)["refresh_token"] == "r1"
 

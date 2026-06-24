@@ -39,7 +39,7 @@ def main(
         None,
         "--token",
         envvar="DIRECTORY_TOKEN",
-        help="Bearer access token (or set DIRECTORY_TOKEN).",
+        help="Bearer id token (or set DIRECTORY_TOKEN).",
     ),
     output_json: bool = typer.Option(
         False, "--json", help="Emit compact JSON (default: pretty-printed)."
@@ -61,7 +61,7 @@ def _resolve_token(settings: Settings) -> None:
     Precedence: --token / DIRECTORY_TOKEN (already on settings) then `directory login`.
     """
     if not settings.token:
-        settings.token = auth.get_access_token(auth.load_auth_config())
+        settings.token = auth.get_id_token(auth.load_auth_config())
 
 
 def _call(settings: Settings, method: str, path: str, body: dict | None = None):
@@ -114,12 +114,12 @@ def logout_cmd(ctx: typer.Context) -> None:
 
 @app.command("token")
 def token_cmd(ctx: typer.Context) -> None:
-    """Print a current access token (for piping into an agent or another tool)."""
-    access_token = auth.get_access_token(auth.load_auth_config())
-    if not access_token:
+    """Print a current id token (for piping into an agent or another tool)."""
+    id_token = auth.get_id_token(auth.load_auth_config())
+    if not id_token:
         typer.secho("No cached token. Run `directory login`.", fg="red", err=True)
         raise typer.Exit(2)
-    typer.echo(access_token)
+    typer.echo(id_token)
 
 
 @me_app.command("get")
