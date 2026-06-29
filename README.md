@@ -11,8 +11,13 @@ CI.
 ## Install
 
 ```bash
-cd cli
-pip install -e .          # or: pip install -e ".[dev]" for tests
+pip install ib1-directory-cli
+```
+
+For local development from a clone:
+
+```bash
+pip install -e ".[dev]"   # or: uv sync --extra dev
 ```
 
 This installs a `directory` command.
@@ -89,7 +94,6 @@ tokens it issues. Both are deploy/infra steps (AWS + the deployments repo), not 
 ## Tests
 
 ```bash
-cd cli
-pip install -e ".[dev]"
-pytest
+pip install -e ".[dev]"   # or: uv sync --extra dev
+pytest                     # or: uv run pytest
 ```

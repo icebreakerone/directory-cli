@@ -3,11 +3,26 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "directory-cli"
-version = "0.1.0"
+name = "ib1-directory-cli"
+dynamic = ["version"]
 description = "Command-line client for the IB1 Directory member API"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Icebreaker One", email = "perseus@ib1.org" }]
+keywords = ["ib1", "directory", "trust-framework", "cli", "perseus"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.12",
     "httpx>=0.27",
@@ -18,8 +33,16 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
 
+[project.urls]
+Homepage = "https://github.com/icebreakerone/directory-cli"
+Repository = "https://github.com/icebreakerone/directory-cli"
+Issues = "https://github.com/icebreakerone/directory-cli/issues"
+
 [project.scripts]
 directory = "directory_cli.main:app"
+
+[tool.hatch.version]
+path = "directory_cli/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["directory_cli"]
