@@ -9,7 +9,8 @@ error, 2 usage error (e.g. no token).
 from __future__ import annotations
 
 import json as jsonlib
-from typing import Optional
+from typing import List, Optional
+from urllib.parse import quote
 
 import httpx
 import typer
@@ -24,6 +25,8 @@ app = typer.Typer(
 )
 me_app = typer.Typer(help="Operate on your own organisation.", no_args_is_help=True)
 app.add_typer(me_app, name="me")
+apps_app = typer.Typer(help="Manage your applications.", no_args_is_help=True)
+app.add_typer(apps_app, name="apps")
 
 
 @app.callback()
@@ -175,3 +178,198 @@ def me_update(
         raise typer.Exit(2)
 
     _emit(settings, _call(settings, "PATCH", "/members/me", body=body))
+
+
+def _build_data_service(
+    title: Optional[str],
+    conforms_to: Optional[str],
+    endpoint_url: Optional[str],
+    oauth_issuer: Optional[str],
+) -> Optional[dict]:
+    """Build the dataService block, or None if no data-service flags were given.
+
+    The three core fields must be supplied together, so a partial block is caught here
+    with an actionable message rather than as a raw 422 from the API.
+    """
+    fields = {
+        "title": title,
+        "conformsTo": conforms_to,
+        "endpointURL": endpoint_url,
+        "oauthIssuer": oauth_issuer,
+    }
+    provided = {key: value for key, value in fields.items() if value is not None}
+    if not provided:
+        return None
+    missing = {"title", "conformsTo", "endpointURL"} - provided.keys()
+    if missing:
+        typer.secho(
+            "--data-service needs title, conforms-to and endpoint-url together "
+            f"(missing: {', '.join(sorted(missing))}).",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(2)
+    return provided
+
+
+@apps_app.command("list")
+def apps_list(
+    ctx: typer.Context,
+    scheme: Optional[str] = typer.Option(None, help="Filter by scheme short name."),
+) -> None:
+    """List your applications (GET /members/applications)."""
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+    path = "/members/applications"
+    if scheme is not None:
+        path += f"?scheme={quote(scheme)}"
+    _emit(settings, _call(settings, "GET", path))
+
+
+@apps_app.command("get")
+def apps_get(
+    ctx: typer.Context,
+    identifier: str = typer.Argument(..., help="Application identifier."),
+) -> None:
+    """Fetch one application (GET /members/applications/{identifier})."""
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+    _emit(settings, _call(settings, "GET", f"/members/applications/{identifier}"))
+
+
+@apps_app.command("create")
+def apps_create(
+    ctx: typer.Context,
+    scheme: str = typer.Option(..., help="Scheme short name to create the application under."),
+    title: str = typer.Option(..., help="Application name."),
+    description: Optional[str] = typer.Option(None),
+    role: Optional[List[str]] = typer.Option(
+        None, help="Claimed role identifier URL (repeat for several)."
+    ),
+    home_page_url: Optional[str] = typer.Option(None, "--home-page-url"),
+    support_url: Optional[str] = typer.Option(None, "--support-url"),
+    message_delivery: Optional[str] = typer.Option(None, "--message-delivery"),
+    data_service_title: Optional[str] = typer.Option(None, "--data-service-title"),
+    data_service_conforms_to: Optional[str] = typer.Option(
+        None, "--data-service-conforms-to"
+    ),
+    data_service_endpoint_url: Optional[str] = typer.Option(
+        None, "--data-service-endpoint-url"
+    ),
+    data_service_oauth_issuer: Optional[str] = typer.Option(
+        None, "--data-service-oauth-issuer"
+    ),
+) -> None:
+    """Create an application (POST /members/applications)."""
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+
+    body: dict = {"scheme": scheme, "title": title}
+    if description is not None:
+        body["description"] = description
+    if role:
+        body["role"] = role
+    if home_page_url is not None:
+        body["homePageURL"] = home_page_url
+    if support_url is not None:
+        body["supportURL"] = support_url
+    if message_delivery is not None:
+        body["messageDelivery"] = message_delivery
+    data_service = _build_data_service(
+        data_service_title,
+        data_service_conforms_to,
+        data_service_endpoint_url,
+        data_service_oauth_issuer,
+    )
+    if data_service is not None:
+        body["dataService"] = data_service
+
+    _emit(settings, _call(settings, "POST", "/members/applications", body=body))
+
+
+@apps_app.command("update")
+def apps_update(
+    ctx: typer.Context,
+    identifier: str = typer.Argument(..., help="Application identifier."),
+    title: Optional[str] = typer.Option(None),
+    description: Optional[str] = typer.Option(None),
+    role: Optional[List[str]] = typer.Option(
+        None, help="Replace the claimed-role set (repeat for several)."
+    ),
+    home_page_url: Optional[str] = typer.Option(None, "--home-page-url"),
+    support_url: Optional[str] = typer.Option(None, "--support-url"),
+    message_delivery: Optional[str] = typer.Option(None, "--message-delivery"),
+    data_service_title: Optional[str] = typer.Option(None, "--data-service-title"),
+    data_service_conforms_to: Optional[str] = typer.Option(
+        None, "--data-service-conforms-to"
+    ),
+    data_service_endpoint_url: Optional[str] = typer.Option(
+        None, "--data-service-endpoint-url"
+    ),
+    data_service_oauth_issuer: Optional[str] = typer.Option(
+        None, "--data-service-oauth-issuer"
+    ),
+) -> None:
+    """Update an application (PATCH /members/applications/{identifier}).
+
+    Only the flags you pass are sent, so this is a partial (merge-patch) update.
+    Passing --role replaces the whole claimed-role set.
+    """
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+
+    body: dict = {}
+    if title is not None:
+        body["title"] = title
+    if description is not None:
+        body["description"] = description
+    if role:
+        body["role"] = role
+    if home_page_url is not None:
+        body["homePageURL"] = home_page_url
+    if support_url is not None:
+        body["supportURL"] = support_url
+    if message_delivery is not None:
+        body["messageDelivery"] = message_delivery
+    data_service = _build_data_service(
+        data_service_title,
+        data_service_conforms_to,
+        data_service_endpoint_url,
+        data_service_oauth_issuer,
+    )
+    if data_service is not None:
+        body["dataService"] = data_service
+
+    if not body:
+        typer.secho("Nothing to update: pass at least one field.", fg="red", err=True)
+        raise typer.Exit(2)
+
+    _emit(
+        settings,
+        _call(settings, "PATCH", f"/members/applications/{identifier}", body=body),
+    )
+
+
+@apps_app.command("delete")
+def apps_delete(
+    ctx: typer.Context,
+    identifier: str = typer.Argument(..., help="Application identifier."),
+    yes: bool = typer.Option(
+        False, "--yes", help="Confirm deletion (required; this is destructive)."
+    ),
+) -> None:
+    """Delete an application (DELETE /members/applications/{identifier}).
+
+    The API refuses (409) if the application still has certificates.
+    """
+    settings: Settings = ctx.obj
+    if not yes:
+        typer.secho("Refusing to delete without --yes.", fg="red", err=True)
+        raise typer.Exit(2)
+    _resolve_token(settings)
+
+    _call(settings, "DELETE", f"/members/applications/{identifier}")
+    if settings.output_json:
+        _emit(settings, {"deleted": identifier})
+    else:
+        typer.secho(f"Deleted application {identifier}.", fg="green")

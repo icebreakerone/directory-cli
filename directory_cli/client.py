@@ -48,4 +48,7 @@ def request(settings: Settings, method: str, path: str, json: dict | None = None
         response = client.request(method, path, headers=headers, json=json)
     if response.status_code >= 400:
         raise APIError(response.status_code, response.text)
+    # DELETE returns 204 with no body; anything empty has nothing to parse.
+    if response.status_code == 204 or not response.content:
+        return None
     return response.json()
