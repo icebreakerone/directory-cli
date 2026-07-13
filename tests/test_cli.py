@@ -120,3 +120,127 @@ def test_token_command_prints_cached_token(monkeypatch):
     result = runner.invoke(app, ["token"])
     assert result.exit_code == 0
     assert "abc123" in result.stdout
+
+
+# --- apps ------------------------------------------------------------------
+
+
+def test_apps_list_calls_endpoint(patch_client):
+    captured = patch_client(200, {"applications": []})
+    result = runner.invoke(app, ["--token", "tok", "apps", "list"])
+    assert result.exit_code == 0
+    assert captured[0].method == "GET"
+    assert captured[0].url.path == "/members/applications"
+    assert captured[0].headers["authorization"] == "Bearer tok"
+
+
+def test_apps_list_scheme_filter_adds_query(patch_client):
+    captured = patch_client(200, {"applications": []})
+    result = runner.invoke(app, ["--token", "tok", "apps", "list", "--scheme", "energy"])
+    assert result.exit_code == 0
+    assert captured[0].url.params.get("scheme") == "energy"
+
+
+def test_apps_get_calls_endpoint(patch_client):
+    captured = patch_client(200, {"id": "http://x/a/abc123", "title": "App"})
+    result = runner.invoke(app, ["--token", "tok", "apps", "get", "abc123"])
+    assert result.exit_code == 0
+    assert captured[0].url.path == "/members/applications/abc123"
+
+
+def test_apps_create_builds_body(patch_client):
+    captured = patch_client(201, {"id": "http://x/a/new"})
+    result = runner.invoke(
+        app,
+        [
+            "--token", "tok", "apps", "create",
+            "--scheme", "s1", "--title", "App",
+            "--role", "https://r/1", "--role", "https://r/2",
+            "--home-page-url", "https://home",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured[0].method == "POST"
+    assert captured[0].url.path == "/members/applications"
+    sent = json.loads(captured[0].content)
+    assert sent == {
+        "scheme": "s1",
+        "title": "App",
+        "role": ["https://r/1", "https://r/2"],
+        "homePageURL": "https://home",
+    }
+
+
+def test_apps_create_includes_data_service(patch_client):
+    captured = patch_client(201, {"id": "http://x/a/new"})
+    result = runner.invoke(
+        app,
+        [
+            "--token", "tok", "apps", "create", "--scheme", "s1", "--title", "A",
+            "--data-service-title", "Svc",
+            "--data-service-conforms-to", "https://standard",
+            "--data-service-endpoint-url", "https://api",
+        ],
+    )
+    assert result.exit_code == 0
+    sent = json.loads(captured[0].content)
+    assert sent["dataService"] == {
+        "title": "Svc",
+        "conformsTo": "https://standard",
+        "endpointURL": "https://api",
+    }
+
+
+def test_apps_create_partial_data_service_is_usage_error(patch_client):
+    captured = patch_client(201, {})
+    result = runner.invoke(
+        app,
+        [
+            "--token", "tok", "apps", "create", "--scheme", "s1", "--title", "A",
+            "--data-service-title", "Svc",  # missing conforms-to + endpoint-url
+        ],
+    )
+    assert result.exit_code == 2
+    assert captured == []  # rejected before any request
+
+
+def test_apps_update_builds_merge_patch(patch_client):
+    captured = patch_client(200, {"id": "http://x/a/the-id"})
+    result = runner.invoke(
+        app, ["--token", "tok", "apps", "update", "the-id", "--title", "New"]
+    )
+    assert result.exit_code == 0
+    assert captured[0].method == "PATCH"
+    assert captured[0].url.path == "/members/applications/the-id"
+    assert json.loads(captured[0].content) == {"title": "New"}
+
+
+def test_apps_update_with_no_fields_is_usage_error(patch_client):
+    captured = patch_client()
+    result = runner.invoke(app, ["--token", "tok", "apps", "update", "the-id"])
+    assert result.exit_code == 2
+    assert captured == []
+
+
+def test_apps_delete_without_yes_is_usage_error(patch_client):
+    captured = patch_client()
+    result = runner.invoke(app, ["--token", "tok", "apps", "delete", "the-id"])
+    assert result.exit_code == 2
+    assert captured == []  # never calls the API
+
+
+def test_apps_delete_with_yes_calls_endpoint(patch_client):
+    captured = patch_client(204)
+    result = runner.invoke(app, ["--token", "tok", "apps", "delete", "the-id", "--yes"])
+    assert result.exit_code == 0
+    assert captured[0].method == "DELETE"
+    assert captured[0].url.path == "/members/applications/the-id"
+
+
+def test_apps_delete_json_emits_confirmation(patch_client):
+    patch_client(204)
+    result = runner.invoke(
+        app, ["--token", "tok", "--json", "apps", "delete", "the-id", "--yes"]
+    )
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"deleted": "the-id"}

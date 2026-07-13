@@ -71,13 +71,45 @@ directory me update --country GB --postal-code "AB1 2CD"
 Editable fields: `--email`, `--street-address`, `--locality`, `--region`, `--state`,
 `--postal-code`, `--country`, `--privacy-policy`, `--data-protection-url`.
 
+### Applications
+
+```bash
+# List your applications (optionally filter by scheme short name)
+directory apps list
+directory apps list --scheme perseus
+
+# Read one application by identifier
+directory apps get abc12345
+
+# Create an application under a scheme (roles are repeatable role identifier URLs)
+directory apps create --scheme perseus --title "My App" \
+  --role https://registry.trust.ib1.org/scheme/perseus/role/data-provider \
+  --home-page-url https://app.example.com
+
+# Create with a data service (title, conforms-to and endpoint-url go together)
+directory apps create --scheme perseus --title "My App" \
+  --data-service-title "My Feed" \
+  --data-service-conforms-to https://standard.example.com \
+  --data-service-endpoint-url https://api.example.com
+
+# Partial update (only the flags you pass are sent; --role replaces the whole set)
+directory apps update abc12345 --title "Renamed" --support-url https://support.example.com
+
+# Delete (destructive, so --yes is required; the API refuses with 409 if certificates exist)
+directory apps delete abc12345 --yes
+```
+
+The `publisher` on a data service is set by the server to your organisation, so there is no
+flag for it. Application create/update accept `--description`, `--home-page-url`,
+`--support-url`, `--message-delivery`, `--role`, and the four `--data-service-*` flags.
+
 ## Exit codes
 
 | Code | Meaning                                              |
 | ---- | ---------------------------------------------------- |
 | 0    | Success                                              |
 | 1    | API or transport error (4xx/5xx, connection failure) |
-| 2    | Usage error (no token, or update with no fields)     |
+| 2    | Usage error (no token, update with no fields, delete without `--yes`) |
 
 ## Prerequisites for login (one-time, out of this repo)
 
