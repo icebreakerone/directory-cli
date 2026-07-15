@@ -27,11 +27,13 @@ def no_cached_token(monkeypatch):
 def patch_client(monkeypatch):
     """Return a factory that installs a mock transport and yields the captured requests."""
 
-    def _apply(status: int = 200, json_body=None):
+    def _apply(status: int = 200, json_body=None, content=None, headers=None):
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured.append(request)
+            if content is not None:
+                return httpx.Response(status, content=content, headers=headers or {})
             return httpx.Response(status, json=json_body if json_body is not None else {})
 
         transport = httpx.MockTransport(handler)
@@ -244,3 +246,64 @@ def test_apps_delete_json_emits_confirmation(patch_client):
     )
     assert result.exit_code == 0
     assert json.loads(result.stdout) == {"deleted": "the-id"}
+
+
+# --- ca --------------------------------------------------------------------
+
+_ZIP = b"PK\x03\x04zip-bytes"
+_DISPOSITION = 'attachment; filename="directory-client-certificates.zip"'
+
+
+def test_ca_download_writes_zip_to_output(patch_client, tmp_path):
+    captured = patch_client(
+        200, content=_ZIP, headers={"content-disposition": _DISPOSITION}
+    )
+    dest = tmp_path / "bundle.zip"
+    result = runner.invoke(
+        app, ["--token", "tok", "ca", "download", "client", "-o", str(dest)]
+    )
+    assert result.exit_code == 0
+    assert captured[0].method == "GET"
+    assert captured[0].url.path == "/members/ca/client/download"
+    assert dest.read_bytes() == _ZIP
+
+
+def test_ca_download_defaults_to_server_filename(patch_client, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    patch_client(
+        200,
+        content=_ZIP,
+        headers={
+            "content-disposition": 'attachment; filename="directory-signing-certificates.zip"'
+        },
+    )
+    result = runner.invoke(app, ["--token", "tok", "ca", "download", "signing"])
+    assert result.exit_code == 0
+    assert (tmp_path / "directory-signing-certificates.zip").read_bytes() == _ZIP
+
+
+def test_ca_download_json_reports_destination(patch_client, tmp_path):
+    patch_client(200, content=_ZIP, headers={"content-disposition": _DISPOSITION})
+    dest = tmp_path / "b.zip"
+    result = runner.invoke(
+        app, ["--token", "tok", "--json", "ca", "download", "client", "-o", str(dest)]
+    )
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"downloaded": str(dest), "bytes": len(_ZIP)}
+
+
+def test_ca_download_api_error_exits_nonzero(patch_client, tmp_path):
+    patch_client(404, content=b"nope")
+    result = runner.invoke(
+        app,
+        ["--token", "tok", "ca", "download", "client", "-o", str(tmp_path / "x.zip")],
+    )
+    assert result.exit_code == 1
+
+
+def test_ca_download_requires_authentication(patch_client, tmp_path):
+    patch_client()
+    result = runner.invoke(
+        app, ["ca", "download", "client", "-o", str(tmp_path / "x.zip")]
+    )
+    assert result.exit_code == 2
