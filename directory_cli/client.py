@@ -7,6 +7,7 @@ later slice; this module deliberately knows nothing about how the token was obta
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -52,3 +53,28 @@ def request(settings: Settings, method: str, path: str, json: dict | None = None
     if response.status_code == 204 or not response.content:
         return None
     return response.json()
+
+
+def _filename_from_disposition(value: str | None) -> str | None:
+    """Pull the filename out of a Content-Disposition header, if present."""
+    if not value:
+        return None
+    match = re.search(r'filename="?([^";]+)"?', value)
+    return match.group(1) if match else None
+
+
+def download(settings: Settings, path: str) -> tuple[bytes, str | None]:
+    """GET a binary response, returning its raw bytes and the server's suggested filename.
+
+    Used for endpoints that return a file (e.g. the CA bundle ZIP) rather than JSON.
+    """
+    if not settings.token:
+        raise MissingToken()
+    headers = {"Authorization": f"Bearer {settings.token}"}
+    with _build_client(settings) as client:
+        response = client.request("GET", path, headers=headers)
+    if response.status_code >= 400:
+        raise APIError(response.status_code, response.text)
+    return response.content, _filename_from_disposition(
+        response.headers.get("content-disposition")
+    )

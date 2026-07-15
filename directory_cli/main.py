@@ -17,6 +17,9 @@ import typer
 
 from directory_cli import auth, client
 from directory_cli.client import Settings
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = typer.Typer(
     help="Command-line client for the IB1 Directory member API.",
@@ -27,6 +30,8 @@ me_app = typer.Typer(help="Operate on your own organisation.", no_args_is_help=T
 app.add_typer(me_app, name="me")
 apps_app = typer.Typer(help="Manage your applications.", no_args_is_help=True)
 app.add_typer(apps_app, name="apps")
+ca_app = typer.Typer(help="Certificate authority bundles.", no_args_is_help=True)
+app.add_typer(ca_app, name="ca")
 
 
 @app.callback()
@@ -67,10 +72,10 @@ def _resolve_token(settings: Settings) -> None:
         settings.token = auth.get_id_token(auth.load_auth_config())
 
 
-def _call(settings: Settings, method: str, path: str, body: dict | None = None):
-    """Run a request, mapping failures to messages on stderr + exit codes."""
+def _with_api_errors(thunk):
+    """Run an API call, mapping failures to stderr messages + exit codes."""
     try:
-        return client.request(settings, method, path, json=body)
+        return thunk()
     except client.MissingToken:
         typer.secho(
             "No token. Run `directory login`, pass --token, or set DIRECTORY_TOKEN.",
@@ -86,6 +91,11 @@ def _call(settings: Settings, method: str, path: str, body: dict | None = None):
     except httpx.HTTPError as exc:
         typer.secho(f"Request failed: {exc}", fg="red", err=True)
         raise typer.Exit(1)
+
+
+def _call(settings: Settings, method: str, path: str, body: dict | None = None):
+    """Run a request, mapping failures to messages on stderr + exit codes."""
+    return _with_api_errors(lambda: client.request(settings, method, path, json=body))
 
 
 @app.command("login")
@@ -240,7 +250,9 @@ def apps_get(
 @apps_app.command("create")
 def apps_create(
     ctx: typer.Context,
-    scheme: str = typer.Option(..., help="Scheme short name to create the application under."),
+    scheme: str = typer.Option(
+        ..., help="Scheme short name to create the application under."
+    ),
     title: str = typer.Option(..., help="Application name."),
     description: Optional[str] = typer.Option(None),
     role: Optional[List[str]] = typer.Option(
@@ -373,3 +385,33 @@ def apps_delete(
         _emit(settings, {"deleted": identifier})
     else:
         typer.secho(f"Deleted application {identifier}.", fg="green")
+
+
+@ca_app.command("download")
+def ca_download(
+    ctx: typer.Context,
+    ca_type: str = typer.Argument(
+        ..., help="Which CA bundle to download: client or signing."
+    ),
+    output: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Path to write the ZIP to (default: the server's filename, in the current directory).",
+    ),
+) -> None:
+    """Download a CA certificate bundle ZIP (GET /members/ca/{ca_type}/download)."""
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+
+    content, server_name = _with_api_errors(
+        lambda: client.download(settings, f"/members/ca/{quote(ca_type)}/download")
+    )
+    dest = output or server_name or f"directory-{ca_type}-certificates.zip"
+    with open(dest, "wb") as handle:
+        handle.write(content)
+
+    if settings.output_json:
+        _emit(settings, {"downloaded": dest, "bytes": len(content)})
+    else:
+        typer.secho(f"Saved {len(content)} bytes to {dest}", fg="green")
