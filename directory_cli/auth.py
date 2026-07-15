@@ -80,7 +80,21 @@ def _account(config: AuthConfig) -> str:
 
 
 def _store_token(config: AuthConfig, token: dict) -> None:
-    keyring.set_password(_KEYRING_SERVICE, _account(config), json.dumps(token))
+    account = _account(config)
+    payload = json.dumps(token)
+    try:
+        keyring.set_password(_KEYRING_SERVICE, account, payload)
+    except keyring.errors.PasswordSetError:
+        # On macOS, keyring updates an existing item in place, and the keychain refuses
+        # to modify one whose access control list is owned by a different binary
+        # (errSecInvalidOwnerEdit / -25244) - e.g. after the CLI is reinstalled under a
+        # different Python. Delete the stale item and store fresh, which creates a new
+        # item owned by the current process.
+        try:
+            keyring.delete_password(_KEYRING_SERVICE, account)
+        except keyring.errors.PasswordDeleteError:
+            pass
+        keyring.set_password(_KEYRING_SERVICE, account, payload)
 
 
 def _load_token(config: AuthConfig) -> dict | None:

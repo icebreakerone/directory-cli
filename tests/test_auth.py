@@ -110,3 +110,30 @@ def test_logout_clears_cache(fake_keyring):
     auth._store_token(config, {"access_token": "a"})
     auth.logout(config)
     assert auth._load_token(config) is None
+
+
+def test_store_token_retries_after_owner_conflict(monkeypatch):
+    """A macOS keychain owner-edit failure (-25244) triggers delete then re-store."""
+    store: dict[tuple[str, str], str] = {}
+    set_calls = {"n": 0}
+
+    def set_password(s, a, v):
+        set_calls["n"] += 1
+        # First attempt hits the pre-existing (foreign-owned) item and is refused.
+        if set_calls["n"] == 1 and (s, a) in store:
+            raise auth.keyring.errors.PasswordSetError("Can't store password on keychain")
+        store[(s, a)] = v
+
+    monkeypatch.setattr(auth.keyring, "get_password", lambda s, a: store.get((s, a)))
+    monkeypatch.setattr(auth.keyring, "set_password", set_password)
+    monkeypatch.setattr(
+        auth.keyring, "delete_password", lambda s, a: store.pop((s, a), None)
+    )
+
+    config = _config()
+    store[(auth._KEYRING_SERVICE, auth._account(config))] = "stale"
+
+    auth._store_token(config, {"id_token": "new"})
+
+    assert auth._load_token(config)["id_token"] == "new"
+    assert set_calls["n"] == 2  # first failed, second succeeded after delete
