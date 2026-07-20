@@ -103,6 +103,29 @@ The `publisher` on a data service is set by the server to your organisation, so 
 flag for it. Application create/update accept `--description`, `--home-page-url`,
 `--support-url`, `--message-delivery`, `--role`, and the four `--data-service-*` flags.
 
+### Certificates
+
+```bash
+# Sign a certificate for an application. With no --csr, a private key and CSR are
+# generated locally; the key is written to disk (mode 0600) and the signed cert saved.
+directory cert sign abc12345 client
+# → my-app writes abc12345-client-key.pem and abc12345-client-cert.pem, prints the cert id
+
+# Use your own CSR instead of generating one (no key is written):
+directory cert sign abc12345 signing --csr my.csr --cert-out signing.pem
+
+# Download a certificate by id (default filename comes from the server)
+directory cert download <certificate-id> -o cert.pem
+
+# Revoke a certificate (destructive, so --yes is required; this is a soft revoke)
+directory cert revoke <certificate-id> --yes
+```
+
+`cert sign` takes the application identifier and the type (`client` or `signing`). The CA
+forces the certificate subject to your organisation regardless of the CSR, so a generated
+CSR's subject does not matter. Download the CA root/intermediate bundle with
+`directory ca download <client|signing>`.
+
 ## Exit codes
 
 | Code | Meaning                                              |

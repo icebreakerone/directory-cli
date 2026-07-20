@@ -307,3 +307,94 @@ def test_ca_download_requires_authentication(patch_client, tmp_path):
         app, ["ca", "download", "client", "-o", str(tmp_path / "x.zip")]
     )
     assert result.exit_code == 2
+
+
+# --- cert ------------------------------------------------------------------
+
+_SIGN_RESULT = {
+    "id": "cert-123",
+    "type": "client",
+    "downloadName": "my-app-client-cert.pem",
+    "certificate": "-----BEGIN CERTIFICATE-----\nsigned\n-----END CERTIFICATE-----\n",
+}
+
+
+def test_cert_sign_generates_key_and_saves_outputs(patch_client, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    captured = patch_client(201, _SIGN_RESULT)
+
+    result = runner.invoke(app, ["--token", "tok", "cert", "sign", "my-app", "client"])
+
+    assert result.exit_code == 0
+    assert captured[0].method == "POST"
+    assert captured[0].url.path == "/members/applications/my-app/certificates/client/sign"
+    sent = json.loads(captured[0].content)
+    assert "BEGIN CERTIFICATE REQUEST" in sent["csr"]  # a CSR was generated
+    # The generated key and the signed cert are written to disk.
+    assert (tmp_path / "my-app-client-key.pem").exists()
+    assert (
+        (tmp_path / "my-app-client-cert.pem").read_text()
+        == _SIGN_RESULT["certificate"]
+    )
+
+
+def test_cert_sign_with_provided_csr_writes_no_key(patch_client, tmp_path):
+    csr_path = tmp_path / "in.csr"
+    csr_path.write_text("-----BEGIN CERTIFICATE REQUEST-----\nmine\n-----END CERTIFICATE REQUEST-----\n")
+    captured = patch_client(201, _SIGN_RESULT)
+
+    result = runner.invoke(
+        app,
+        [
+            "--token", "tok", "cert", "sign", "my-app", "client",
+            "--csr", str(csr_path),
+            "--cert-out", str(tmp_path / "out.pem"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(captured[0].content)["csr"] == csr_path.read_text()
+    assert not (tmp_path / "my-app-client-key.pem").exists()  # user supplied the CSR
+    assert (tmp_path / "out.pem").read_text() == _SIGN_RESULT["certificate"]
+
+
+def test_cert_sign_sends_name_when_given(patch_client, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    captured = patch_client(201, _SIGN_RESULT)
+    result = runner.invoke(
+        app, ["--token", "tok", "cert", "sign", "my-app", "signing", "--name", "prod key"]
+    )
+    assert result.exit_code == 0
+    assert json.loads(captured[0].content)["name"] == "prod key"
+
+
+def test_cert_download_writes_pem(patch_client, tmp_path):
+    captured = patch_client(
+        200,
+        content=b"CERT-PEM",
+        headers={"content-disposition": 'attachment; filename="my-app-client-cert.pem"'},
+    )
+    dest = tmp_path / "c.pem"
+    result = runner.invoke(
+        app, ["--token", "tok", "cert", "download", "cert-123", "-o", str(dest)]
+    )
+    assert result.exit_code == 0
+    assert captured[0].url.path == "/members/certificates/cert-123/download"
+    assert dest.read_bytes() == b"CERT-PEM"
+
+
+def test_cert_revoke_without_yes_is_usage_error(patch_client):
+    captured = patch_client()
+    result = runner.invoke(app, ["--token", "tok", "cert", "revoke", "cert-123"])
+    assert result.exit_code == 2
+    assert captured == []  # never calls the API
+
+
+def test_cert_revoke_with_yes_calls_endpoint(patch_client):
+    captured = patch_client(200, {"id": "cert-123", "revoked": "2026-07-15T00:00:00Z"})
+    result = runner.invoke(
+        app, ["--token", "tok", "cert", "revoke", "cert-123", "--yes"]
+    )
+    assert result.exit_code == 0
+    assert captured[0].method == "POST"
+    assert captured[0].url.path == "/members/certificates/cert-123/revoke"
