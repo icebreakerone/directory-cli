@@ -9,6 +9,7 @@ error, 2 usage error (e.g. no token).
 from __future__ import annotations
 
 import json as jsonlib
+import os
 from typing import List, Optional
 from urllib.parse import quote
 
@@ -17,6 +18,7 @@ import typer
 
 from directory_cli import auth, client
 from directory_cli.client import Settings
+from directory_cli.csr import generate_key_and_csr
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,6 +39,10 @@ admin_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(admin_app, name="admin")
+cert_app = typer.Typer(
+    help="Sign, download and revoke certificates.", no_args_is_help=True
+)
+app.add_typer(cert_app, name="cert")
 
 
 @app.callback()
@@ -466,6 +472,41 @@ def admin_create_org(
 
     Creates the organisation, its scheme membership + role and the officer contacts. The
     scheme is fixed per environment; add owners afterwards with `admin add-member`.
+def _write_file(path: str, data: bytes, *, private: bool = False) -> None:
+    with open(path, "wb") as handle:
+        handle.write(data)
+    if private:
+        os.chmod(path, 0o600)
+
+
+@cert_app.command("sign")
+def cert_sign(
+    ctx: typer.Context,
+    application_identifier: str = typer.Argument(
+        ..., help="Identifier of the application to sign the certificate for."
+    ),
+    cert_type: str = typer.Argument(..., help="Certificate type: client or signing."),
+    csr: Optional[str] = typer.Option(
+        None,
+        "--csr",
+        help="Path to an existing CSR PEM. If omitted, a key and CSR are generated locally.",
+    ),
+    name: Optional[str] = typer.Option(None, help="Optional label for the certificate."),
+    key_out: Optional[str] = typer.Option(
+        None,
+        "--key-out",
+        help="Where to write the generated private key (default {app}-{type}-key.pem). Ignored with --csr.",
+    ),
+    cert_out: Optional[str] = typer.Option(
+        None,
+        "--cert-out",
+        help="Where to write the signed certificate (default {app}-{type}-cert.pem).",
+    ),
+) -> None:
+    """Sign a certificate for an application.
+
+    Without --csr, a P-256 key and CSR are generated locally and the key is written to
+    disk (mode 0600). The CA forces the certificate subject regardless of the CSR.
     """
     settings: Settings = ctx.obj
     _resolve_token(settings)
@@ -508,6 +549,89 @@ def admin_add_member(
     (POST /admin/organizations/{identifier}/members)."""
     settings: Settings = ctx.obj
     _resolve_token(settings)
+    generated_key = None
+    if csr is not None:
+        with open(csr, "r") as handle:
+            csr_pem = handle.read()
+    else:
+        generated_key, csr_pem = generate_key_and_csr()
+
+    body: dict = {"csr": csr_pem}
+    if name is not None:
+        body["name"] = name
+    result = _call(
+        settings,
+        "POST",
+        f"/members/applications/{quote(application_identifier)}"
+        f"/certificates/{quote(cert_type)}/sign",
+        body=body,
+    )
+
+    saved: dict = {}
+    if generated_key is not None:
+        key_path = key_out or f"{application_identifier}-{cert_type}-key.pem"
+        _write_file(key_path, generated_key, private=True)
+        saved["key"] = key_path
+    pem = result.get("certificate")
+    if pem:
+        cert_path = cert_out or f"{application_identifier}-{cert_type}-cert.pem"
+        _write_file(cert_path, pem.encode())
+        saved["certificate"] = cert_path
+
+    if settings.output_json:
+        _emit(settings, {**result, "saved": saved})
+    else:
+        typer.secho(
+            f"Signed certificate {result.get('id')} ({cert_type}).", fg="green"
+        )
+        for label, path in saved.items():
+            typer.secho(f"  {label}: {path}", fg="green")
+
+
+@cert_app.command("download")
+def cert_download(
+    ctx: typer.Context,
+    certificate_id: str = typer.Argument(..., help="Certificate id."),
+    output: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Path to write the PEM to (default: the server's filename, in the current directory).",
+    ),
+) -> None:
+    """Download a signed certificate PEM (GET /members/certificates/{id}/download)."""
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+
+    content, server_name = _with_api_errors(
+        lambda: client.download(
+            settings, f"/members/certificates/{quote(certificate_id)}/download"
+        )
+    )
+    dest = output or server_name or f"{certificate_id}.pem"
+    _write_file(dest, content)
+
+    if settings.output_json:
+        _emit(settings, {"downloaded": dest, "bytes": len(content)})
+    else:
+        typer.secho(f"Saved {len(content)} bytes to {dest}", fg="green")
+
+
+@cert_app.command("revoke")
+def cert_revoke(
+    ctx: typer.Context,
+    certificate_id: str = typer.Argument(..., help="Certificate id."),
+    yes: bool = typer.Option(
+        False, "--yes", help="Confirm revocation (required; this is destructive)."
+    ),
+) -> None:
+    """Revoke a certificate (POST /members/certificates/{id}/revoke)."""
+    settings: Settings = ctx.obj
+    if not yes:
+        typer.secho("Refusing to revoke without --yes.", fg="red", err=True)
+        raise typer.Exit(2)
+    _resolve_token(settings)
+
     _emit(
         settings,
         _call(
@@ -515,5 +639,6 @@ def admin_add_member(
             "POST",
             f"/admin/organizations/{quote(organization_identifier)}/members",
             body={"email": email},
+            f"/members/certificates/{quote(certificate_id)}/revoke",
         ),
     )

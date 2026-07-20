@@ -258,6 +258,7 @@ name = "ib1-directory-cli"
 source = { editable = "." }
 dependencies = [
     { name = "authlib" },
+    { name = "cryptography" },
     { name = "httpx" },
     { name = "keyring" },
     { name = "python-dotenv" },
@@ -273,6 +274,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "authlib", specifier = ">=1.3" },
+    { name = "cryptography", specifier = ">=42" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
