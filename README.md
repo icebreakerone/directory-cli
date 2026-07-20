@@ -103,6 +103,28 @@ The `publisher` on a data service is set by the server to your organisation, so 
 flag for it. Application create/update accept `--description`, `--home-page-url`,
 `--support-url`, `--message-delivery`, `--role`, and the four `--data-service-*` flags.
 
+### Administration
+
+Admin commands require your Cognito account to be in the directory admin group; other users
+get a 403.
+
+```bash
+# Onboard a new organisation (creates the org, its scheme membership + role, and the
+# officer contacts). The scheme is fixed per environment; the role is a slug within it.
+directory admin create-org \
+  --legal-name "Acme Ltd" --email contact@acme.example \
+  --street-address "1 Main St" --locality London --postal-code "AB1 2CD" \
+  --company-number 12345678 --role energy-data-provider \
+  --data-officer-name "Dana" --data-officer-email dana@acme.example \
+  --licence-officer-name "Lee" --licence-officer-phone "+441234567890"
+
+# Add a user to an organisation and send them a Cognito invite (they become an owner)
+directory admin add-member <organization-identifier> --email new.owner@acme.example
+```
+
+Each officer needs an email or a phone. `--region` and `--effective-date` (ISO `YYYY-MM-DD`,
+default today) are optional. Onboarding = `create-org`, then `add-member` for each owner.
+
 ## Exit codes
 
 | Code | Meaning                                              |
