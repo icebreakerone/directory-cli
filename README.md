@@ -124,6 +124,7 @@ directory admin add-member <organization-identifier> --email new.owner@acme.exam
 
 Each officer needs an email or a phone. `--region` and `--effective-date` (ISO `YYYY-MM-DD`,
 default today) are optional. Onboarding = `create-org`, then `add-member` for each owner.
+
 ### Certificates
 
 ```bash

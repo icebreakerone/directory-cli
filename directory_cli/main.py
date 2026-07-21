@@ -34,15 +34,15 @@ apps_app = typer.Typer(help="Manage your applications.", no_args_is_help=True)
 app.add_typer(apps_app, name="apps")
 ca_app = typer.Typer(help="Certificate authority bundles.", no_args_is_help=True)
 app.add_typer(ca_app, name="ca")
+cert_app = typer.Typer(
+    help="Sign, download and revoke certificates.", no_args_is_help=True
+)
+app.add_typer(cert_app, name="cert")
 admin_app = typer.Typer(
     help="Administrator actions (onboarding). Requires the Cognito admin group.",
     no_args_is_help=True,
 )
 app.add_typer(admin_app, name="admin")
-cert_app = typer.Typer(
-    help="Sign, download and revoke certificates.", no_args_is_help=True
-)
-app.add_typer(cert_app, name="cert")
 
 
 @app.callback()
@@ -428,50 +428,6 @@ def ca_download(
         typer.secho(f"Saved {len(content)} bytes to {dest}", fg="green")
 
 
-def _officer(
-    name: str, email: Optional[str], phone: Optional[str], *, label: str
-) -> dict:
-    """Build a trust-framework officer block; it must carry an email or a phone."""
-    if email is None and phone is None:
-        typer.secho(
-            f"--{label}-officer-email or --{label}-officer-phone is required.",
-            fg="red",
-            err=True,
-        )
-        raise typer.Exit(2)
-    officer: dict = {"name": name}
-    if email is not None:
-        officer["email"] = email
-    if phone is not None:
-        officer["phone"] = phone
-    return officer
-
-
-@admin_app.command("create-org")
-def admin_create_org(
-    ctx: typer.Context,
-    legal_name: str = typer.Option(..., "--legal-name", help="Registered legal name."),
-    email: str = typer.Option(..., help="Organisation contact email."),
-    street_address: str = typer.Option(..., "--street-address"),
-    locality: str = typer.Option(..., help="City / locality."),
-    postal_code: str = typer.Option(..., "--postal-code"),
-    company_number: str = typer.Option(..., "--company-number"),
-    role: str = typer.Option(..., help="Role slug within the environment's scheme."),
-    data_officer_name: str = typer.Option(..., "--data-officer-name"),
-    licence_officer_name: str = typer.Option(..., "--licence-officer-name"),
-    region: Optional[str] = typer.Option(None),
-    effective_date: Optional[str] = typer.Option(
-        None, "--effective-date", help="ISO date (YYYY-MM-DD); defaults to today."
-    ),
-    data_officer_email: Optional[str] = typer.Option(None, "--data-officer-email"),
-    data_officer_phone: Optional[str] = typer.Option(None, "--data-officer-phone"),
-    licence_officer_email: Optional[str] = typer.Option(None, "--licence-officer-email"),
-    licence_officer_phone: Optional[str] = typer.Option(None, "--licence-officer-phone"),
-) -> None:
-    """Onboard a new organisation (POST /admin/organizations).
-
-    Creates the organisation, its scheme membership + role and the officer contacts. The
-    scheme is fixed per environment; add owners afterwards with `admin add-member`.
 def _write_file(path: str, data: bytes, *, private: bool = False) -> None:
     with open(path, "wb") as handle:
         handle.write(data)
@@ -511,44 +467,6 @@ def cert_sign(
     settings: Settings = ctx.obj
     _resolve_token(settings)
 
-    body: dict = {
-        "legalName": legal_name,
-        "email": email,
-        "streetAddress": street_address,
-        "locality": locality,
-        "postalCode": postal_code,
-        "companyNumber": company_number,
-        "role": role,
-        "dataOfficer": _officer(
-            data_officer_name, data_officer_email, data_officer_phone, label="data"
-        ),
-        "licenceOfficer": _officer(
-            licence_officer_name,
-            licence_officer_email,
-            licence_officer_phone,
-            label="licence",
-        ),
-    }
-    if region is not None:
-        body["region"] = region
-    if effective_date is not None:
-        body["effectiveDate"] = effective_date
-
-    _emit(settings, _call(settings, "POST", "/admin/organizations", body=body))
-
-
-@admin_app.command("add-member")
-def admin_add_member(
-    ctx: typer.Context,
-    organization_identifier: str = typer.Argument(
-        ..., help="Identifier of the organisation to add the user to."
-    ),
-    email: str = typer.Option(..., help="Email of the user to add."),
-) -> None:
-    """Add a user to an organisation and provision their Cognito login
-    (POST /admin/organizations/{identifier}/members)."""
-    settings: Settings = ctx.obj
-    _resolve_token(settings)
     generated_key = None
     if csr is not None:
         with open(csr, "r") as handle:
@@ -637,8 +555,103 @@ def cert_revoke(
         _call(
             settings,
             "POST",
+            f"/members/certificates/{quote(certificate_id)}/revoke",
+        ),
+    )
+
+
+def _officer(
+    name: str, email: Optional[str], phone: Optional[str], *, label: str
+) -> dict:
+    """Build a trust-framework officer block; it must carry an email or a phone."""
+    if email is None and phone is None:
+        typer.secho(
+            f"--{label}-officer-email or --{label}-officer-phone is required.",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(2)
+    officer: dict = {"name": name}
+    if email is not None:
+        officer["email"] = email
+    if phone is not None:
+        officer["phone"] = phone
+    return officer
+
+
+@admin_app.command("create-org")
+def admin_create_org(
+    ctx: typer.Context,
+    legal_name: str = typer.Option(..., "--legal-name", help="Registered legal name."),
+    email: str = typer.Option(..., help="Organisation contact email."),
+    street_address: str = typer.Option(..., "--street-address"),
+    locality: str = typer.Option(..., help="City / locality."),
+    postal_code: str = typer.Option(..., "--postal-code"),
+    company_number: str = typer.Option(..., "--company-number"),
+    role: str = typer.Option(..., help="Role slug within the environment's scheme."),
+    data_officer_name: str = typer.Option(..., "--data-officer-name"),
+    licence_officer_name: str = typer.Option(..., "--licence-officer-name"),
+    region: Optional[str] = typer.Option(None),
+    effective_date: Optional[str] = typer.Option(
+        None, "--effective-date", help="ISO date (YYYY-MM-DD); defaults to today."
+    ),
+    data_officer_email: Optional[str] = typer.Option(None, "--data-officer-email"),
+    data_officer_phone: Optional[str] = typer.Option(None, "--data-officer-phone"),
+    licence_officer_email: Optional[str] = typer.Option(None, "--licence-officer-email"),
+    licence_officer_phone: Optional[str] = typer.Option(None, "--licence-officer-phone"),
+) -> None:
+    """Onboard a new organisation (POST /admin/organizations).
+
+    Creates the organisation, its scheme membership + role and the officer contacts. The
+    scheme is fixed per environment; add owners afterwards with `admin add-member`.
+    """
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+
+    body: dict = {
+        "legalName": legal_name,
+        "email": email,
+        "streetAddress": street_address,
+        "locality": locality,
+        "postalCode": postal_code,
+        "companyNumber": company_number,
+        "role": role,
+        "dataOfficer": _officer(
+            data_officer_name, data_officer_email, data_officer_phone, label="data"
+        ),
+        "licenceOfficer": _officer(
+            licence_officer_name,
+            licence_officer_email,
+            licence_officer_phone,
+            label="licence",
+        ),
+    }
+    if region is not None:
+        body["region"] = region
+    if effective_date is not None:
+        body["effectiveDate"] = effective_date
+
+    _emit(settings, _call(settings, "POST", "/admin/organizations", body=body))
+
+
+@admin_app.command("add-member")
+def admin_add_member(
+    ctx: typer.Context,
+    organization_identifier: str = typer.Argument(
+        ..., help="Identifier of the organisation to add the user to."
+    ),
+    email: str = typer.Option(..., help="Email of the user to add."),
+) -> None:
+    """Add a user to an organisation and provision their Cognito login
+    (POST /admin/organizations/{identifier}/members)."""
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+    _emit(
+        settings,
+        _call(
+            settings,
+            "POST",
             f"/admin/organizations/{quote(organization_identifier)}/members",
             body={"email": email},
-            f"/members/certificates/{quote(certificate_id)}/revoke",
         ),
     )
