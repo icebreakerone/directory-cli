@@ -63,8 +63,20 @@ def main(
     output_json: bool = typer.Option(
         False, "--json", help="Emit compact JSON (default: pretty-printed)."
     ),
+    organization: Optional[str] = typer.Option(
+        None,
+        "--organization",
+        envvar="DIRECTORY_ORGANIZATION",
+        help="Act as this organisation identifier. Needed only if you own more than one "
+        "(list them with `me orgs`). No short flag: -o is the output path on other commands.",
+    ),
 ) -> None:
-    ctx.obj = Settings(api_url=api_url, token=token, output_json=output_json)
+    ctx.obj = Settings(
+        api_url=api_url,
+        token=token,
+        output_json=output_json,
+        organization=organization,
+    )
 
 
 def _emit(settings: Settings, data) -> None:
@@ -144,6 +156,18 @@ def token_cmd(ctx: typer.Context) -> None:
         typer.secho("No cached token. Run `directory login`.", fg="red", err=True)
         raise typer.Exit(2)
     typer.echo(id_token)
+
+
+@me_app.command("orgs")
+def me_orgs(ctx: typer.Context) -> None:
+    """List the organisations you own (GET /members/organizations).
+
+    Use an identifier from here with --organization when you own more than one.
+    Owning a single organisation needs no selector.
+    """
+    settings: Settings = ctx.obj
+    _resolve_token(settings)
+    _emit(settings, _call(settings, "GET", "/members/organizations"))
 
 
 @me_app.command("get")
