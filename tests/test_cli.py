@@ -309,6 +309,60 @@ def test_ca_download_requires_authentication(patch_client, tmp_path):
     assert result.exit_code == 2
 
 
+# --- admin -----------------------------------------------------------------
+
+_CREATE_ORG_ARGS = [
+    "--legal-name", "Acme Ltd",
+    "--email", "contact@acme.example",
+    "--street-address", "1 Main St",
+    "--locality", "London",
+    "--postal-code", "AB1 2CD",
+    "--company-number", "12345678",
+    "--role", "energy-data-provider",
+    "--data-officer-name", "Dana",
+    "--data-officer-email", "dana@acme.example",
+    "--licence-officer-name", "Lee",
+    "--licence-officer-phone", "+441234567890",
+]
+
+
+def test_admin_create_org_builds_body(patch_client):
+    captured = patch_client(201, {"identifier": "abc12345"})
+    result = runner.invoke(app, ["--token", "tok", "admin", "create-org", *_CREATE_ORG_ARGS])
+    assert result.exit_code == 0
+    assert captured[0].method == "POST"
+    assert captured[0].url.path == "/admin/organizations"
+    sent = json.loads(captured[0].content)
+    assert sent["legalName"] == "Acme Ltd"
+    assert sent["companyNumber"] == "12345678"
+    assert sent["role"] == "energy-data-provider"
+    assert sent["dataOfficer"] == {"name": "Dana", "email": "dana@acme.example"}
+    assert sent["licenceOfficer"] == {"name": "Lee", "phone": "+441234567890"}
+    assert "region" not in sent  # optional, omitted
+
+
+def test_admin_create_org_officer_without_contact_is_usage_error(patch_client):
+    captured = patch_client(201, {})
+    args = [
+        "--legal-name", "Acme", "--email", "c@a.co", "--street-address", "1 St",
+        "--locality", "London", "--postal-code", "AB1", "--company-number", "123",
+        "--role", "r", "--data-officer-name", "Dana", "--licence-officer-name", "Lee",
+    ]  # neither officer has an email/phone
+    result = runner.invoke(app, ["--token", "tok", "admin", "create-org", *args])
+    assert result.exit_code == 2
+    assert captured == []  # rejected before any request
+
+
+def test_admin_add_member_calls_endpoint(patch_client):
+    captured = patch_client(200, {"email": "u@example.org", "userCreated": True})
+    result = runner.invoke(
+        app,
+        ["--token", "tok", "admin", "add-member", "org-1", "--email", "u@example.org"],
+    )
+    assert result.exit_code == 0
+    assert captured[0].method == "POST"
+    assert captured[0].url.path == "/admin/organizations/org-1/members"
+    assert json.loads(captured[0].content) == {"email": "u@example.org"}
 # --- cert ------------------------------------------------------------------
 
 _SIGN_RESULT = {
