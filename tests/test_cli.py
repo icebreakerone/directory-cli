@@ -452,3 +452,74 @@ def test_cert_revoke_with_yes_calls_endpoint(patch_client):
     assert result.exit_code == 0
     assert captured[0].method == "POST"
     assert captured[0].url.path == "/members/certificates/cert-123/revoke"
+
+
+# ---------------------------------------------------------------------------
+# Multi-org selector: `me orgs` and the --organization / -o header
+# ---------------------------------------------------------------------------
+
+
+def test_me_orgs_lists_owned_organizations(patch_client):
+    captured = patch_client(
+        200,
+        {"organizations": [{"identifier": "acme", "legalName": "Acme Co"}]},
+    )
+
+    result = runner.invoke(app, ["--token", "tok", "me", "orgs"])
+
+    assert result.exit_code == 0
+    assert "acme" in result.stdout
+    assert captured[0].method == "GET"
+    assert captured[0].url.path == "/members/organizations"
+    # The selector feed itself carries no X-Organization header.
+    assert "x-organization" not in captured[0].headers
+
+
+def test_organization_flag_sends_header(patch_client):
+    captured = patch_client(200, {"identifier": "cap-org"})
+
+    result = runner.invoke(
+        app, ["--token", "tok", "--organization", "cap-org", "me", "get"]
+    )
+
+    assert result.exit_code == 0
+    assert captured[0].headers["x-organization"] == "cap-org"
+
+
+def test_organization_from_env(patch_client, monkeypatch):
+    monkeypatch.setenv("DIRECTORY_ORGANIZATION", "cap-org")
+    captured = patch_client(200, {"identifier": "cap-org"})
+
+    result = runner.invoke(app, ["--token", "tok", "me", "get"])
+
+    assert result.exit_code == 0
+    assert captured[0].headers["x-organization"] == "cap-org"
+
+
+def test_no_organization_omits_header(patch_client):
+    captured = patch_client(200, {"identifier": "acme"})
+
+    result = runner.invoke(app, ["--token", "tok", "me", "get"])
+
+    assert result.exit_code == 0
+    assert "x-organization" not in captured[0].headers
+
+
+def test_organization_flag_flows_into_downloads(patch_client, tmp_path):
+    captured = patch_client(
+        200,
+        content=b"ZIP",
+        headers={"content-disposition": 'attachment; filename="bundle.zip"'},
+    )
+    dest = tmp_path / "bundle.zip"
+
+    result = runner.invoke(
+        app,
+        [
+            "--token", "tok", "--organization", "cap-org",
+            "ca", "download", "client", "-o", str(dest),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured[0].headers["x-organization"] == "cap-org"

@@ -24,11 +24,12 @@ This installs a `directory` command.
 
 ## Configuration
 
-| Option      | Env var             | Default                 |
-| ----------- | ------------------- | ----------------------- |
-| `--api-url` | `DIRECTORY_API_URL` | `http://localhost:8000` |
-| `--token`   | `DIRECTORY_TOKEN`   | (none)                  |
-| `--json`    |                     | pretty-printed          |
+| Option           | Env var                  | Default                 |
+| ---------------- | ------------------------ | ----------------------- |
+| `--api-url`      | `DIRECTORY_API_URL`      | `http://localhost:8000` |
+| `--token`        | `DIRECTORY_TOKEN`        | (none)                  |
+| `--organization` | `DIRECTORY_ORGANIZATION` | (none)                  |
+| `--json`         |                          | pretty-printed          |
 
 Login uses these (the public Cognito client is environment-specific):
 
@@ -70,6 +71,30 @@ directory me update --country GB --postal-code "AB1 2CD"
 
 Editable fields: `--email`, `--street-address`, `--locality`, `--region`, `--state`,
 `--postal-code`, `--country`, `--privacy-policy`, `--data-protection-url`.
+
+### Organisations (owning more than one)
+
+Most users own a single organisation and need nothing extra. Some own several — for example an
+energy data provider that also owns an example CAP organisation, which it acts as to generate test
+certificates. List the ones you own, then pass `--organization <identifier>` (or set
+`DIRECTORY_ORGANIZATION`) on any command to say which one you are acting as.
+
+```bash
+# List the organisations you own
+directory me orgs
+
+# Act as a specific organisation
+directory --organization cap12345 me get
+directory --organization cap12345 cert sign abc12345 client
+
+# Or set it once for the session
+export DIRECTORY_ORGANIZATION=cap12345
+directory me get
+```
+
+If you own more than one organisation and don't pass a selector, the API returns an error asking you
+to pick one. There is no `-o` short flag for `--organization` because `-o` is the output-path flag on
+`ca download` and `cert download`.
 
 ### Applications
 

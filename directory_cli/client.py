@@ -20,6 +20,7 @@ class Settings:
     api_url: str
     token: str | None
     output_json: bool
+    organization: str | None = None
 
 
 class MissingToken(Exception):
@@ -40,11 +41,23 @@ def _build_client(settings: Settings) -> httpx.Client:
     return httpx.Client(base_url=settings.api_url, timeout=10.0)
 
 
-def request(settings: Settings, method: str, path: str, json: dict | None = None):
-    """Call the API with the bearer token, returning the parsed JSON body."""
+def _auth_headers(settings: Settings) -> dict[str, str]:
+    """Bearer header, plus the organisation selector when one is set.
+
+    A caller who owns a single organisation omits the selector. A caller who owns several
+    sets `--organization` / DIRECTORY_ORGANIZATION so the API knows which one to act as.
+    """
     if not settings.token:
         raise MissingToken()
     headers = {"Authorization": f"Bearer {settings.token}"}
+    if settings.organization:
+        headers["X-Organization"] = settings.organization
+    return headers
+
+
+def request(settings: Settings, method: str, path: str, json: dict | None = None):
+    """Call the API with the bearer token, returning the parsed JSON body."""
+    headers = _auth_headers(settings)
     with _build_client(settings) as client:
         response = client.request(method, path, headers=headers, json=json)
     if response.status_code >= 400:
@@ -68,9 +81,7 @@ def download(settings: Settings, path: str) -> tuple[bytes, str | None]:
 
     Used for endpoints that return a file (e.g. the CA bundle ZIP) rather than JSON.
     """
-    if not settings.token:
-        raise MissingToken()
-    headers = {"Authorization": f"Bearer {settings.token}"}
+    headers = _auth_headers(settings)
     with _build_client(settings) as client:
         response = client.request("GET", path, headers=headers)
     if response.status_code >= 400:
