@@ -435,12 +435,12 @@ def ca_download(
         help="Path to write the ZIP to (default: the server's filename, in the current directory).",
     ),
 ) -> None:
-    """Download a CA certificate bundle ZIP (GET /members/ca/{ca_type}/download)."""
+    """Download a CA certificate bundle ZIP (GET /members/ca/{ca_type}.zip)."""
     settings: Settings = ctx.obj
     _resolve_token(settings)
 
     content, server_name = _with_api_errors(
-        lambda: client.download(settings, f"/members/ca/{quote(ca_type)}/download")
+        lambda: client.download(settings, f"/members/ca/{quote(ca_type)}.zip")
     )
     dest = output or server_name or f"directory-{ca_type}-certificates.zip"
     with open(dest, "wb") as handle:
@@ -541,13 +541,13 @@ def cert_download(
         help="Path to write the PEM to (default: the server's filename, in the current directory).",
     ),
 ) -> None:
-    """Download a signed certificate PEM (GET /members/certificates/{id}/download)."""
+    """Download a signed certificate PEM (GET /members/certificates/{id}.pem)."""
     settings: Settings = ctx.obj
     _resolve_token(settings)
 
     content, server_name = _with_api_errors(
         lambda: client.download(
-            settings, f"/members/certificates/{quote(certificate_id)}/download"
+            settings, f"/members/certificates/{quote(certificate_id)}.pem"
         )
     )
     dest = output or server_name or f"{certificate_id}.pem"
