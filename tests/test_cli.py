@@ -264,7 +264,7 @@ def test_ca_download_writes_zip_to_output(patch_client, tmp_path):
     )
     assert result.exit_code == 0
     assert captured[0].method == "GET"
-    assert captured[0].url.path == "/members/ca/client/download"
+    assert captured[0].url.path == "/members/ca/client.zip"
     assert dest.read_bytes() == _ZIP
 
 
@@ -433,7 +433,7 @@ def test_cert_download_writes_pem(patch_client, tmp_path):
         app, ["--token", "tok", "cert", "download", "cert-123", "-o", str(dest)]
     )
     assert result.exit_code == 0
-    assert captured[0].url.path == "/members/certificates/cert-123/download"
+    assert captured[0].url.path == "/members/certificates/cert-123.pem"
     assert dest.read_bytes() == b"CERT-PEM"
 
 
