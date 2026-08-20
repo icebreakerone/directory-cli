@@ -7,3 +7,12 @@ __pycache__/
 dist/
 build/
 .env
+
+# Keys, certificates and CA bundles. `cert sign` writes {app}-{type}-key.pem and
+# {app}-{type}-cert.pem, and `ca download` writes directory-{ca_type}-certificates.zip,
+# all into the working directory by default. Anyone running the CLI from a clone would
+# otherwise leave a private key sitting in the repository.
+*.pem
+*.key
+*.csr
+directory-*-certificates.zip
