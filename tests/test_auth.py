@@ -8,7 +8,7 @@ client and are covered by manual verification).
 import json
 import time
 
-import httpx
+import httpx2
 import pytest
 
 from directory_cli import auth
@@ -54,19 +54,19 @@ def login_config_api(monkeypatch):
     """Serve GET /.well-known/directory-cli from a mock transport; return the captured requests."""
 
     def _apply(status: int = 200, json_body=None, content=None):
-        captured: list[httpx.Request] = []
+        captured: list[httpx2.Request] = []
 
-        def handler(request: httpx.Request) -> httpx.Response:
+        def handler(request: httpx2.Request) -> httpx2.Response:
             captured.append(request)
             if content is not None:
-                return httpx.Response(status, content=content)
-            return httpx.Response(status, json=json_body)
+                return httpx2.Response(status, content=content)
+            return httpx2.Response(status, json=json_body)
 
-        transport = httpx.MockTransport(handler)
+        transport = httpx2.MockTransport(handler)
         monkeypatch.setattr(
             auth,
             "_build_http_client",
-            lambda api_url: httpx.Client(base_url=api_url, transport=transport),
+            lambda api_url: httpx2.Client(base_url=api_url, transport=transport),
         )
         return captured
 

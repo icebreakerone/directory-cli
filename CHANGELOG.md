@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.5.1] - 2026-09-15
+
+### Changed
+
+- Use `httpx2` instead of `httpx`, and require `authlib` 1.8 or later, which uses `httpx2` too. This removes the `AuthlibDeprecationWarning` that every command printed with `authlib` 1.8. `httpx2` checks HTTPS certificates against the operating system's certificate store rather than the `certifi` bundle
+
 ## [v0.5.0] - 2026-09-15
 
 ### Changed

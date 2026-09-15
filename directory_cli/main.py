@@ -13,7 +13,7 @@ import os
 from typing import List, Optional
 from urllib.parse import quote
 
-import httpx
+import httpx2
 import typer
 
 from directory_cli import auth, client
@@ -111,7 +111,7 @@ def _with_api_errors(thunk):
         if exc.body:
             typer.echo(exc.body, err=True)
         raise typer.Exit(1)
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         typer.secho(f"Request failed: {exc}", fg="red", err=True)
         raise typer.Exit(1)
 
@@ -133,7 +133,7 @@ def login_cmd(ctx: typer.Context) -> None:
     except auth.LoginNotConfigured as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(2)
-    except (auth.LoginConfigError, httpx.HTTPError) as exc:
+    except (auth.LoginConfigError, httpx2.HTTPError) as exc:
         typer.secho(f"Could not get login configuration: {exc}", fg="red", err=True)
         raise typer.Exit(1)
     try:

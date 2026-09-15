@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-import httpx
+import httpx2
 
 
 @dataclass
@@ -36,9 +36,9 @@ class APIError(Exception):
         self.body = body
 
 
-def _build_client(settings: Settings) -> httpx.Client:
-    # Tests patch this to inject an httpx.MockTransport (no real network calls).
-    return httpx.Client(base_url=settings.api_url, timeout=10.0)
+def _build_client(settings: Settings) -> httpx2.Client:
+    # Tests patch this to inject an httpx2.MockTransport (no real network calls).
+    return httpx2.Client(base_url=settings.api_url, timeout=10.0)
 
 
 def _auth_headers(settings: Settings) -> dict[str, str]:
