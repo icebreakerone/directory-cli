@@ -4,12 +4,17 @@ Authorization-code + PKCE against the Cognito Hosted UI, with the access/refresh
 cached in the OS keyring. The CLI is a public client (no secret), so PKCE is what proves
 the token request came from the same client that started the login.
 
-Configured from the environment (the public Cognito client is environment-specific):
+The Cognito hosted UI domain, client id and scopes are discovered from the API being
+logged in to (GET /.well-known/directory-cli), so the API URL is the only thing a user sets. Any of
+them can be overridden from the environment, e.g. against an API that does not publish them:
 
   DIRECTORY_COGNITO_DOMAIN     e.g. https://<prefix>.auth.eu-west-2.amazoncognito.com
   DIRECTORY_COGNITO_CLIENT_ID  the public (no-secret) CLI app client id
-  DIRECTORY_OAUTH_SCOPES       default "openid email"
+  DIRECTORY_OAUTH_SCOPES       space-separated, default "openid email"
   DIRECTORY_REDIRECT_PORT      default 8400 (must match the client's registered callback)
+
+Tokens are cached per API URL, together with the domain and client id that issued them, so
+refreshing a token never needs the API.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ import time
 import webbrowser
 from dataclasses import dataclass
 
+import httpx
 import keyring
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import OAuth2Client
@@ -28,14 +34,25 @@ from authlib.integrations.httpx_client import OAuth2Client
 _KEYRING_SERVICE = "directory-cli"
 # Refresh a bit before the real expiry so a token handed out is still valid in flight.
 _EXPIRY_SKEW_SECONDS = 30
+LOGIN_CONFIG_PATH = "/.well-known/directory-cli"
+_DEFAULT_SCOPES = "openid email"
+_DEFAULT_REDIRECT_PORT = 8400
+
+
+class LoginConfigError(Exception):
+    """The login configuration could not be fetched from the API."""
+
+
+class LoginNotConfigured(LoginConfigError):
+    """The API does not publish login configuration, and none was set locally."""
 
 
 @dataclass
 class AuthConfig:
-    domain: str | None
-    client_id: str | None
-    scopes: str
-    redirect_port: int
+    domain: str
+    client_id: str
+    scopes: str = _DEFAULT_SCOPES
+    redirect_port: int = _DEFAULT_REDIRECT_PORT
 
     @property
     def redirect_uri(self) -> str:
@@ -53,35 +70,83 @@ class AuthConfig:
     def logout_endpoint(self) -> str:
         return f"{self.domain}/logout"
 
-    def missing_for_login(self) -> list[str]:
-        missing = []
-        if not self.domain:
-            missing.append("DIRECTORY_COGNITO_DOMAIN")
-        if not self.client_id:
-            missing.append("DIRECTORY_COGNITO_CLIENT_ID")
-        return missing
+
+def _build_http_client(api_url: str) -> httpx.Client:
+    # Tests patch this to inject an httpx.MockTransport (no real network calls).
+    return httpx.Client(base_url=api_url, timeout=10.0)
 
 
-def load_auth_config() -> AuthConfig:
+def fetch_login_config(api_url: str) -> dict:
+    """Fetch the Cognito domain, client id and scopes the API publishes for CLI login.
+
+    Raises LoginNotConfigured on a 404 (an environment without CLI login, or an API that
+    predates the endpoint), LoginConfigError on any other unusable response, and lets
+    httpx transport errors propagate.
+    """
+    with _build_http_client(api_url) as http:
+        response = http.get(LOGIN_CONFIG_PATH)
+    if response.status_code == 404:
+        raise LoginNotConfigured(
+            f"{api_url} does not publish CLI login configuration. Check the API URL, or set "
+            "DIRECTORY_COGNITO_DOMAIN and DIRECTORY_COGNITO_CLIENT_ID."
+        )
+    if response.status_code >= 400:
+        raise LoginConfigError(
+            f"Fetching login configuration from {api_url} returned {response.status_code}"
+        )
+    try:
+        body = response.json()
+        return {
+            "domain": body["cognitoDomain"],
+            "client_id": body["clientId"],
+            "scopes": " ".join(body["scopes"]),
+        }
+    # A path the API doesn't serve can land on the web frontend and come back as HTML.
+    except (ValueError, KeyError, TypeError) as exc:
+        raise LoginConfigError(
+            f"{api_url}{LOGIN_CONFIG_PATH} did not return login configuration"
+        ) from exc
+
+
+def resolve_auth_config(api_url: str) -> AuthConfig:
+    """Login settings for this API: environment overrides first, then the API's own.
+
+    The API is only asked when the environment doesn't already supply both the domain and
+    the client id.
+    """
+    domain = os.environ.get("DIRECTORY_COGNITO_DOMAIN")
+    client_id = os.environ.get("DIRECTORY_COGNITO_CLIENT_ID")
+    scopes = os.environ.get("DIRECTORY_OAUTH_SCOPES")
+    if not (domain and client_id):
+        discovered = fetch_login_config(api_url)
+        domain = domain or discovered["domain"]
+        client_id = client_id or discovered["client_id"]
+        scopes = scopes or discovered["scopes"]
     return AuthConfig(
-        domain=os.environ.get("DIRECTORY_COGNITO_DOMAIN"),
-        client_id=os.environ.get("DIRECTORY_COGNITO_CLIENT_ID"),
-        scopes=os.environ.get("DIRECTORY_OAUTH_SCOPES", "openid email"),
-        redirect_port=int(os.environ.get("DIRECTORY_REDIRECT_PORT", "8400")),
+        domain=domain.rstrip("/"),
+        client_id=client_id,
+        scopes=scopes or _DEFAULT_SCOPES,
+        redirect_port=int(
+            os.environ.get("DIRECTORY_REDIRECT_PORT", _DEFAULT_REDIRECT_PORT)
+        ),
     )
 
 
 # --- token cache (OS keyring) --------------------------------------------------------
 
 
-def _account(config: AuthConfig) -> str:
-    # Key by client id so different environments don't share a cache entry.
-    return config.client_id or "default"
+def _account(api_url: str) -> str:
+    # Key by API URL so different environments don't share a cache entry.
+    return api_url.rstrip("/")
 
 
-def _store_token(config: AuthConfig, token: dict) -> None:
-    account = _account(config)
-    payload = json.dumps(token)
+def _store_token(api_url: str, config: AuthConfig, token: dict) -> None:
+    account = _account(api_url)
+    # The domain and client id travel with the token: a refresh token is only valid for
+    # the client that issued it, so refreshing must not depend on what the API says now.
+    payload = json.dumps(
+        {"domain": config.domain, "client_id": config.client_id, "token": token}
+    )
     try:
         keyring.set_password(_KEYRING_SERVICE, account, payload)
     except keyring.errors.PasswordSetError:
@@ -97,14 +162,24 @@ def _store_token(config: AuthConfig, token: dict) -> None:
         keyring.set_password(_KEYRING_SERVICE, account, payload)
 
 
-def _load_token(config: AuthConfig) -> dict | None:
-    raw = keyring.get_password(_KEYRING_SERVICE, _account(config))
-    return json.loads(raw) if raw else None
+def _load_entry(api_url: str) -> tuple[AuthConfig, dict] | None:
+    """The cached (config, token) for this API, or None if there is no usable entry."""
+    raw = keyring.get_password(_KEYRING_SERVICE, _account(api_url))
+    if not raw:
+        return None
+    entry = json.loads(raw)
+    if (
+        not isinstance(entry, dict)
+        or not {"domain", "client_id", "token"} <= entry.keys()
+    ):
+        return None
+    config = AuthConfig(domain=entry["domain"], client_id=entry["client_id"])
+    return config, entry["token"]
 
 
-def _clear_token(config: AuthConfig) -> None:
+def _clear_token(api_url: str) -> None:
     try:
-        keyring.delete_password(_KEYRING_SERVICE, _account(config))
+        keyring.delete_password(_KEYRING_SERVICE, _account(api_url))
     except keyring.errors.PasswordDeleteError:
         pass
 
@@ -143,7 +218,7 @@ def _capture_redirect(config: AuthConfig, authorization_url: str) -> str:
     return f"http://localhost:{config.redirect_port}{captured['path']}"
 
 
-def login(config: AuthConfig) -> dict:
+def login(api_url: str, config: AuthConfig) -> dict:
     """Run the interactive login and cache the resulting tokens. Returns the token dict."""
     code_verifier = generate_token(48)
     with OAuth2Client(
@@ -163,32 +238,33 @@ def login(config: AuthConfig) -> dict:
             code_verifier=code_verifier,
         )
     token = dict(token)
-    _store_token(config, token)
+    _store_token(api_url, config, token)
     return token
 
 
-def logout(config: AuthConfig) -> None:
-    """Clear the cached tokens."""
-    _clear_token(config)
+def logout(api_url: str) -> None:
+    """Clear the cached tokens for this API."""
+    _clear_token(api_url)
 
 
-def get_id_token(config: AuthConfig) -> str | None:
+def get_id_token(api_url: str) -> str | None:
     """Return a usable id token from the cache, refreshing it if expired.
 
     The member API authenticates with the id token (it carries the user's email, which
     the API matches to their organisation). Returns None when there is nothing cached, or
     it has expired and cannot be refreshed.
     """
-    token = _load_token(config)
-    if not token:
+    entry = _load_entry(api_url)
+    if not entry:
         return None
+    config, token = entry
 
     expires_at = token.get("expires_at")
     if not expires_at or time.time() < expires_at - _EXPIRY_SKEW_SECONDS:
         return token.get("id_token")
 
     refresh_token = token.get("refresh_token")
-    if not refresh_token or not config.domain or not config.client_id:
+    if not refresh_token:
         return None
     with OAuth2Client(
         client_id=config.client_id, token_endpoint_auth_method="none"
@@ -198,5 +274,5 @@ def get_id_token(config: AuthConfig) -> str | None:
         )
     # Cognito does not return a new refresh token on refresh; keep the existing one.
     new_token.setdefault("refresh_token", refresh_token)
-    _store_token(config, new_token)
+    _store_token(api_url, config, new_token)
     return new_token.get("id_token")

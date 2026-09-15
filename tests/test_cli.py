@@ -105,11 +105,54 @@ def test_me_get_falls_back_to_cached_token(monkeypatch, patch_client):
     assert captured[0].headers["authorization"] == "Bearer cached-tok"
 
 
-def test_login_without_config_is_usage_error(monkeypatch):
+@pytest.fixture
+def login_config_api(monkeypatch):
+    """Answer GET /.well-known/directory-cli with the given response, with no local overrides."""
     monkeypatch.delenv("DIRECTORY_COGNITO_DOMAIN", raising=False)
     monkeypatch.delenv("DIRECTORY_COGNITO_CLIENT_ID", raising=False)
+
+    def _apply(status: int, json_body=None):
+        transport = httpx.MockTransport(lambda request: httpx.Response(status, json=json_body))
+        monkeypatch.setattr(
+            auth_mod,
+            "_build_http_client",
+            lambda api_url: httpx.Client(base_url=api_url, transport=transport),
+        )
+
+    return _apply
+
+
+def test_login_uses_config_from_api(monkeypatch, login_config_api):
+    login_config_api(
+        200,
+        {
+            "cognitoDomain": "https://d.auth.eu-west-2.amazoncognito.com",
+            "clientId": "cli-client",
+            "scopes": ["openid", "email"],
+        },
+    )
+    calls = []
+    monkeypatch.setattr(auth_mod, "login", lambda api_url, config: calls.append((api_url, config)))
+
+    result = runner.invoke(app, ["--api-url", "https://directory.example.org", "login"])
+
+    assert result.exit_code == 0
+    api_url, config = calls[0]
+    assert api_url == "https://directory.example.org"
+    assert config.client_id == "cli-client"
+
+
+def test_login_when_api_publishes_no_config_is_usage_error(login_config_api):
+    login_config_api(404, {"detail": "CLI login is not configured for this environment"})
     result = runner.invoke(app, ["login"])
     assert result.exit_code == 2
+    assert "DIRECTORY_COGNITO_CLIENT_ID" in result.stderr
+
+
+def test_login_when_config_fetch_fails_is_api_error(login_config_api):
+    login_config_api(502, {})
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 1
 
 
 def test_token_command_without_cache_is_usage_error():
