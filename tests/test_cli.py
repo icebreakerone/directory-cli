@@ -1,12 +1,12 @@
 """Tests for the Directory CLI (token-paste mode).
 
-The tests patch `_build_client` to return a client with an httpx.MockTransport, so
+The tests patch `_build_client` to return a client with an httpx2.MockTransport, so
 nothing hits the network.
 """
 
 import json
 
-import httpx
+import httpx2
 import pytest
 from typer.testing import CliRunner
 
@@ -28,19 +28,19 @@ def patch_client(monkeypatch):
     """Return a factory that installs a mock transport and yields the captured requests."""
 
     def _apply(status: int = 200, json_body=None, content=None, headers=None):
-        captured: list[httpx.Request] = []
+        captured: list[httpx2.Request] = []
 
-        def handler(request: httpx.Request) -> httpx.Response:
+        def handler(request: httpx2.Request) -> httpx2.Response:
             captured.append(request)
             if content is not None:
-                return httpx.Response(status, content=content, headers=headers or {})
-            return httpx.Response(status, json=json_body if json_body is not None else {})
+                return httpx2.Response(status, content=content, headers=headers or {})
+            return httpx2.Response(status, json=json_body if json_body is not None else {})
 
-        transport = httpx.MockTransport(handler)
+        transport = httpx2.MockTransport(handler)
         monkeypatch.setattr(
             client_mod,
             "_build_client",
-            lambda settings: httpx.Client(base_url=settings.api_url, transport=transport),
+            lambda settings: httpx2.Client(base_url=settings.api_url, transport=transport),
         )
         return captured
 
@@ -112,11 +112,11 @@ def login_config_api(monkeypatch):
     monkeypatch.delenv("DIRECTORY_COGNITO_CLIENT_ID", raising=False)
 
     def _apply(status: int, json_body=None):
-        transport = httpx.MockTransport(lambda request: httpx.Response(status, json=json_body))
+        transport = httpx2.MockTransport(lambda request: httpx2.Response(status, json=json_body))
         monkeypatch.setattr(
             auth_mod,
             "_build_http_client",
-            lambda api_url: httpx.Client(base_url=api_url, transport=transport),
+            lambda api_url: httpx2.Client(base_url=api_url, transport=transport),
         )
 
     return _apply

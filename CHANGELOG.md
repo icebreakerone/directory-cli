@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.5.1] - 2026-09-15
+
+### Changed
+
+- Use `httpx2` instead of `httpx`, and require `authlib` 1.8 or later, which uses `httpx2` too. This removes the `AuthlibDeprecationWarning` that every command printed with `authlib` 1.8. `httpx2` checks HTTPS certificates against the operating system's certificate store rather than the `certifi` bundle
+
+### Security
+
+- Lock `cryptography` to 50.0.1 for development and CI, fixing a PKCS#7 EnvelopedData decryption flaw in versions 44.0.0 to 49.x. The CLI does not use PKCS#7, and `pip install` already resolved a fixed version
+
 ## [v0.5.0] - 2026-09-15
 
 ### Changed

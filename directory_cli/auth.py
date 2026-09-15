@@ -26,7 +26,7 @@ import time
 import webbrowser
 from dataclasses import dataclass
 
-import httpx
+import httpx2
 import keyring
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import OAuth2Client
@@ -71,9 +71,9 @@ class AuthConfig:
         return f"{self.domain}/logout"
 
 
-def _build_http_client(api_url: str) -> httpx.Client:
-    # Tests patch this to inject an httpx.MockTransport (no real network calls).
-    return httpx.Client(base_url=api_url, timeout=10.0)
+def _build_http_client(api_url: str) -> httpx2.Client:
+    # Tests patch this to inject an httpx2.MockTransport (no real network calls).
+    return httpx2.Client(base_url=api_url, timeout=10.0)
 
 
 def fetch_login_config(api_url: str) -> dict:
@@ -81,7 +81,7 @@ def fetch_login_config(api_url: str) -> dict:
 
     Raises LoginNotConfigured on a 404 (an environment without CLI login, or an API that
     predates the endpoint), LoginConfigError on any other unusable response, and lets
-    httpx transport errors propagate.
+    httpx2 transport errors propagate.
     """
     with _build_http_client(api_url) as http:
         response = http.get(LOGIN_CONFIG_PATH)
