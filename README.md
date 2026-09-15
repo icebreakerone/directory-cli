@@ -24,12 +24,15 @@ This installs a `directory` command.
 
 ## Configuration
 
-| Option           | Env var                  | Default                 |
-| ---------------- | ------------------------ | ----------------------- |
-| `--api-url`      | `DIRECTORY_API_URL`      | `http://localhost:8000` |
-| `--token`        | `DIRECTORY_TOKEN`        | (none)                  |
-| `--organization` | `DIRECTORY_ORGANIZATION` | (none)                  |
-| `--json`         |                          | pretty-printed          |
+| Option           | Env var                  | Default                                        |
+| ---------------- | ------------------------ | ---------------------------------------------- |
+| `--api-url`      | `DIRECTORY_API_URL`      | `https://directory.core.sandbox.trust.ib1.org` |
+| `--token`        | `DIRECTORY_TOKEN`        | (none)                                         |
+| `--organization` | `DIRECTORY_ORGANIZATION` | (none)                                         |
+| `--json`         |                          | pretty-printed                                 |
+
+The default API is the sandbox. Point `--api-url` or `DIRECTORY_API_URL` at another
+environment, or at `http://localhost:8000` for a locally running API.
 
 Login needs no configuration beyond the API URL. `directory login` asks the API for its
 Cognito hosted UI domain, client id and scopes (`GET /.well-known/directory-cli`). These optional
@@ -48,7 +51,6 @@ both set.
 ## Login
 
 ```bash
-export DIRECTORY_API_URL=https://directory.example.org
 directory login     # opens a browser, caches the token in your OS keyring
 directory logout    # clears the cached token for this API
 directory token     # prints a current id token (refreshing if needed)

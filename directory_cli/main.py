@@ -49,7 +49,7 @@ app.add_typer(admin_app, name="admin")
 def main(
     ctx: typer.Context,
     api_url: str = typer.Option(
-        "http://localhost:8000",
+        "https://directory.core.sandbox.trust.ib1.org",
         "--api-url",
         envvar="DIRECTORY_API_URL",
         help="Base URL of the Directory API.",
