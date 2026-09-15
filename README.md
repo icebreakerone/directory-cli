@@ -24,32 +24,44 @@ This installs a `directory` command.
 
 ## Configuration
 
-| Option           | Env var                  | Default                 |
-| ---------------- | ------------------------ | ----------------------- |
-| `--api-url`      | `DIRECTORY_API_URL`      | `http://localhost:8000` |
-| `--token`        | `DIRECTORY_TOKEN`        | (none)                  |
-| `--organization` | `DIRECTORY_ORGANIZATION` | (none)                  |
-| `--json`         |                          | pretty-printed          |
+| Option           | Env var                  | Default                                        |
+| ---------------- | ------------------------ | ---------------------------------------------- |
+| `--api-url`      | `DIRECTORY_API_URL`      | `https://directory.core.sandbox.trust.ib1.org` |
+| `--token`        | `DIRECTORY_TOKEN`        | (none)                                         |
+| `--organization` | `DIRECTORY_ORGANIZATION` | (none)                                         |
+| `--json`         |                          | pretty-printed                                 |
 
-Login uses these (the public Cognito client is environment-specific):
+The default API is the sandbox. Point `--api-url` or `DIRECTORY_API_URL` at another
+environment, or at `http://localhost:8000` for a locally running API.
+
+Login needs no configuration beyond the API URL. `directory login` asks the API for its
+Cognito hosted UI domain, client id and scopes (`GET /.well-known/directory-cli`). These optional
+variables override what the API publishes, e.g. against an API that doesn't publish it:
 
 | Env var                       | Meaning                                                   |
 | ----------------------------- | --------------------------------------------------------- |
 | `DIRECTORY_COGNITO_DOMAIN`    | Hosted UI base URL, e.g. `https://<prefix>.auth.<region>.amazoncognito.com` |
 | `DIRECTORY_COGNITO_CLIENT_ID` | The public (no-secret) CLI app client id                  |
-| `DIRECTORY_OAUTH_SCOPES`      | Default `openid email`                                    |
+| `DIRECTORY_OAUTH_SCOPES`      | Space-separated scopes. Default: whatever the API publishes, else `openid email` |
 | `DIRECTORY_REDIRECT_PORT`     | Default `8400` (must match the client's registered callback) |
+
+The API is only asked when `DIRECTORY_COGNITO_DOMAIN` and `DIRECTORY_COGNITO_CLIENT_ID` aren't
+both set.
 
 ## Login
 
 ```bash
 directory login     # opens a browser, caches the token in your OS keyring
-directory logout    # clears the cached token
+directory logout    # clears the cached token for this API
 directory token     # prints a current id token (refreshing if needed)
 ```
 
 After `directory login`, `me get` / `me update` use the cached token automatically. Token
 precedence is `--token` then `DIRECTORY_TOKEN` then the keyring cache.
+
+Tokens are cached per API URL, so you can be logged in to several environments at once and
+`--api-url` picks which token is used. The Cognito client that issued a token is cached with
+it, so refreshing the token doesn't call the API.
 
 `directory token` is the bridge for agents/CI that can't open a browser: a human runs it and
 passes the value as `DIRECTORY_TOKEN`. The token is short-lived, so this suits short runs.
@@ -179,7 +191,7 @@ CSR's subject does not matter. Download the CA root/intermediate bundle with
 | ---- | ---------------------------------------------------- |
 | 0    | Success                                              |
 | 1    | API or transport error (4xx/5xx, connection failure) |
-| 2    | Usage error (no token, update with no fields, delete without `--yes`) |
+| 2    | Usage error (no token, update with no fields, delete without `--yes`, login against an API that publishes no login configuration) |
 
 ## Prerequisites for login (one-time, out of this repo)
 
@@ -190,8 +202,13 @@ Interactive login needs a **public** Cognito app client on the existing user poo
 - callback URL `http://localhost:8400/callback` (the exact port must match `DIRECTORY_REDIRECT_PORT`)
 - scopes `openid email`
 
-Its client id must also be added to the API's `COGNITO_ALLOWED_CLIENT_IDS` so the API accepts
-tokens it issues. Both are deploy/infra steps (AWS + the deployments repo), not part of the CLI.
+The API it logs in to must then be configured with:
+
+- `COGNITO_ALLOWED_CLIENT_IDS` including the client id, so the API accepts tokens it issues
+- `COGNITO_DOMAIN` and `COGNITO_CLI_CLIENT_ID`, so the API publishes them at
+  `/.well-known/directory-cli` for the CLI to discover
+
+These are deploy/infra steps (AWS and the deployments repo), not part of the CLI.
 
 ## Tests
 

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- `login` gets the Cognito hosted UI domain, client id and scopes from the API it is pointed at (`GET /.well-known/directory-cli`), so it needs only `--api-url` or `DIRECTORY_API_URL`. `DIRECTORY_COGNITO_DOMAIN`, `DIRECTORY_COGNITO_CLIENT_ID` and `DIRECTORY_OAUTH_SCOPES` still work, and now override the published values. **Login discovery requires a directory API that has this endpoint.** Against an older API, set the two Cognito variables as before
+- The default API URL is now the sandbox, `https://directory.core.sandbox.trust.ib1.org`, instead of `http://localhost:8000`. Set `--api-url` or `DIRECTORY_API_URL` to use another environment or a local API
+- Cached tokens are keyed by API URL rather than Cognito client id, and store the client that issued them. `logout` and `token` act on the token for the current `--api-url`. **Tokens cached by v0.4.0 are not read, so run `directory login` once after upgrading**
+
 ## [v0.4.0] - 2026-08-20
 
 First release published to PyPI, and the first with the repository public.

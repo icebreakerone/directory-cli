@@ -49,7 +49,7 @@ app.add_typer(admin_app, name="admin")
 def main(
     ctx: typer.Context,
     api_url: str = typer.Option(
-        "http://localhost:8000",
+        "https://directory.core.sandbox.trust.ib1.org",
         "--api-url",
         envvar="DIRECTORY_API_URL",
         help="Base URL of the Directory API.",
@@ -92,7 +92,7 @@ def _resolve_token(settings: Settings) -> None:
     Precedence: --token / DIRECTORY_TOKEN (already on settings) then `directory login`.
     """
     if not settings.token:
-        settings.token = auth.get_id_token(auth.load_auth_config())
+        settings.token = auth.get_id_token(settings.api_url)
 
 
 def _with_api_errors(thunk):
@@ -123,18 +123,21 @@ def _call(settings: Settings, method: str, path: str, body: dict | None = None):
 
 @app.command("login")
 def login_cmd(ctx: typer.Context) -> None:
-    """Log in via the browser (authorization-code + PKCE) and cache the token."""
-    config = auth.load_auth_config()
-    missing = config.missing_for_login()
-    if missing:
-        typer.secho(
-            f"Missing config: {', '.join(missing)}. See the README for the env vars.",
-            fg="red",
-            err=True,
-        )
-        raise typer.Exit(2)
+    """Log in via the browser (authorization-code + PKCE) and cache the token.
+
+    The Cognito details come from the API (--api-url), unless set in the environment.
+    """
+    settings: Settings = ctx.obj
     try:
-        auth.login(config)
+        config = auth.resolve_auth_config(settings.api_url)
+    except auth.LoginNotConfigured as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(2)
+    except (auth.LoginConfigError, httpx.HTTPError) as exc:
+        typer.secho(f"Could not get login configuration: {exc}", fg="red", err=True)
+        raise typer.Exit(1)
+    try:
+        auth.login(settings.api_url, config)
     except Exception as exc:  # browser/exchange failures
         typer.secho(f"Login failed: {exc}", fg="red", err=True)
         raise typer.Exit(1)
@@ -143,15 +146,17 @@ def login_cmd(ctx: typer.Context) -> None:
 
 @app.command("logout")
 def logout_cmd(ctx: typer.Context) -> None:
-    """Clear the cached token."""
-    auth.logout(auth.load_auth_config())
+    """Clear the cached token for this API."""
+    settings: Settings = ctx.obj
+    auth.logout(settings.api_url)
     typer.echo("Logged out.")
 
 
 @app.command("token")
 def token_cmd(ctx: typer.Context) -> None:
     """Print a current id token (for piping into an agent or another tool)."""
-    id_token = auth.get_id_token(auth.load_auth_config())
+    settings: Settings = ctx.obj
+    id_token = auth.get_id_token(settings.api_url)
     if not id_token:
         typer.secho("No cached token. Run `directory login`.", fg="red", err=True)
         raise typer.Exit(2)
